@@ -13,3 +13,8 @@ Route::prefix('auth')->name('social.')->group(function () {
         ->name('callback');
 });
 
+// show the login/welcome page
+Route::view('/', 'welcome')->name('login');
+
+
+
