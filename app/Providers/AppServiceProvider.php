@@ -2,33 +2,11 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
-use SocialiteProviders\Manager\SocialiteWasCalled;
-use SocialiteProviders\Microsoft\MicrosoftExtendSocialite;
-
+use Illuminate\Support\ServiceProvider; // <-- the ONLY import here
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
-    public function register(): void
-    {
-        //
-    }
-
-    protected $listen = [
-        SocialiteWasCalled::class => [
-            MicrosoftExtendSocialite::class.'@handle',
-        ],
-    ];
-
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
-    {
-        //
-    }
+    public function register(): void {}
+    public function boot(): void {}
 }
+
