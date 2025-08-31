@@ -3,6 +3,10 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use SocialiteProviders\Manager\SocialiteWasCalled;
+use SocialiteProviders\Microsoft\MicrosoftExtendSocialite;
+
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,6 +17,12 @@ class AppServiceProvider extends ServiceProvider
     {
         //
     }
+
+    protected $listen = [
+        SocialiteWasCalled::class => [
+            MicrosoftExtendSocialite::class.'@handle',
+        ],
+    ];
 
     /**
      * Bootstrap any application services.
