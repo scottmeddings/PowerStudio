@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\PageController;   // <-- missing before
 
 /*
 |--------------------------------------------------------------------------
@@ -29,7 +30,7 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware('guest')->group(function () {
-    // Login screen (your social buttons live in resources/views/auth/login.blade.php)
+    // Login screen
     Route::view('/login', 'auth.login')->name('login');
 
     // Registration (optional)
@@ -52,24 +53,10 @@ Route::middleware('guest')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->group(function () {
-    // Dashboard
-    
+    // Email verification UX (if you use it)
+    Route::get('/verify-email', fn () => view('auth.verify-email'))
+        ->name('verification.notice');
 
-    Route::middleware(['auth','verified'])->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    });
-
-
-    // Profile (Breeze-style)
-    Route::get('/profile',   [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile',[ProfileController::class, 'destroy'])->name('profile.destroy');
-
-    // Password update (Breeze expects this name)
-    Route::put('/password', [PasswordController::class, 'update'])->name('password.update');
-
-    // Email verification (only if your views reference these)
-    Route::get('/verify-email', fn () => view('auth.verify-email'))->name('verification.notice');
     Route::get('/verify-email/{id}/{hash}', function (EmailVerificationRequest $request) {
         $request->fulfill();
         return redirect()->route('dashboard');
@@ -80,6 +67,26 @@ Route::middleware('auth')->group(function () {
         return back()->with('status', 'verification-link-sent');
     })->middleware('throttle:6,1')->name('verification.send');
 
+    // Password & profile
+    Route::put('/password', [PasswordController::class, 'update'])->name('password.update');
+
+    Route::get('/profile',   [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile',[ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Core app pages (require verified account if you want — toggle middleware as needed)
+Route::middleware('auth')->group(function () {
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Left-menu pages
+    Route::get('/episodes',      [PageController::class, 'episodes'])->name('episodes');
+    Route::get('/distribution',  [PageController::class, 'distribution'])->name('distribution');
+    Route::get('/statistics',    [PageController::class, 'statistics'])->name('statistics');
+    Route::get('/monetization',  [PageController::class, 'monetization'])->name('monetization');
+    Route::get('/settings',      [PageController::class, 'settings'])->name('settings');
+});
+
+
     // Logout (POST)
     Route::post('/logout', function (Request $request) {
         Auth::logout();
@@ -89,13 +96,10 @@ Route::middleware('auth')->group(function () {
     })->name('logout');
 });
 
-
-
 /*
 |--------------------------------------------------------------------------
 | Fallback
 |--------------------------------------------------------------------------
-| If someone wanders off the map, guide them back.
 */
 Route::fallback(function () {
     return auth()->check()

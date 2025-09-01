@@ -1,36 +1,205 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="csrf-token" content="{{ csrf_token() }}">
+{{-- resources/views/layouts/app.blade.php --}}
+<!doctype html>
+<html lang="{{ str_replace('_','-', app()->getLocale()) }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Powerpod · @yield('title', 'dashboard')</title>
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 
-        <!-- Fonts -->
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+  <style>
+    :root{
+      --brand-1:#6366f1; /* indigo */
+      --brand-2:#06b6d4; /* cyan   */
+      --sidebar-w: 260px;
+    }
+    body { background-color:#f5f7fb; }
 
-        <!-- Scripts -->
-        @vite(['resources/css/app.css', 'resources/js/app.js'])
-    </head>
-    <body class="font-sans antialiased">
-        <div class="min-h-screen bg-gray-100">
-            @include('layouts.navigation')
+    /* Layout grid */
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: auto 1fr;
+      grid-template-areas:
+        "sidebar topbar"
+        "sidebar main";
+    }
+    .sidebar { grid-area: sidebar; background:#0f172a; color:#cbd5e1;
+      position:sticky; top:0; height:100vh; padding:1rem 0; z-index:2000; } /* <-- important */
+    .topbar  { grid-area: topbar; background:#fff; border-bottom:1px solid rgba(0,0,0,.06);
+      position:sticky; top:0; z-index:1010; }
+    .main    { grid-area: main; position:relative; z-index:1; } /* keep below sidebar */
 
-            <!-- Page Heading -->
-            @isset($header)
-                <header class="bg-white shadow">
-                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                        {{ $header }}
-                    </div>
-                </header>
-            @endisset
+    /* Sidebar styling */
+    .sidebar .brand { display:flex; align-items:center; gap:.75rem; padding:.5rem 1.25rem 1rem; color:#fff; text-decoration:none; }
+    .brand-badge { width:34px;height:34px;border-radius:10px;display:inline-grid;place-items:center;color:#fff;
+      background:linear-gradient(135deg,var(--brand-1),var(--brand-2)); box-shadow:0 10px 20px rgba(99,102,241,.35); }
+    .sidebar .nav-link{ color:#cbd5e1; border-radius:.5rem; padding:.6rem 1rem; margin:.2rem .75rem; }
+    .sidebar .nav-link.active, .sidebar .nav-link:hover{ color:#fff; background:rgba(255,255,255,.08); }
+    .sidebar .upgrade{ position:absolute; left:1rem; right:1rem; bottom:1rem; }
 
-            <!-- Page Content -->
-            <main>
-                {{ $slot }}
-            </main>
-        </div>
-    </body>
+    /* Shared bits for pages */
+    .section-card{ background:#fff; border:1px solid rgba(0,0,0,.06); border-radius:.75rem; box-shadow:0 10px 30px rgba(0,0,0,.03); }
+    .tile{ border:1px solid rgba(0,0,0,.06); border-radius:.75rem; background:#fff; padding:1rem 1.25rem; }
+    .tile h3{ font-size:.9rem; color:#64748b; margin:0 0 .3rem; }
+    .tile .value{ font-weight:700; font-size:1.75rem; }
+
+    /* Mobile */
+    @media (max-width:992px){
+      .app{ grid-template-columns: 1fr; grid-template-areas: "topbar" "main"; }
+      .sidebar{ position:fixed; inset:0 auto 0 0; width:var(--sidebar-w); transform:translateX(-100%); transition:transform .25s; z-index:1050; }
+      .sidebar.show{ transform:translateX(0); }
+      .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1049; }
+      .sidebar-backdrop.show{ display:block; }
+    }
+  </style>
+
+  @stack('styles')
+</head>
+<body>
+<div class="app">
+  {{-- Sidebar --}}
+  <aside id="sidebar" class="sidebar">
+    <a href="{{ route('dashboard') }}" class="brand">
+      <span class="brand-badge"><i class="bi bi-soundwave"></i></span>
+      <span class="fw-semibold">Powerpod</span>
+    </a>
+
+    <nav class="mt-2">
+      <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
+         href="{{ route('dashboard') }}"
+         @if(request()->routeIs('dashboard')) aria-current="page" @endif>
+        <i class="bi bi-speedometer2 me-2"></i>Dashboard
+      </a>
+
+      <a class="nav-link {{ request()->routeIs('episodes*') ? 'active' : '' }}"
+         href="{{ route('episodes') }}"
+         @if(request()->routeIs('episodes*')) aria-current="page" @endif>
+        <i class="bi bi-mic me-2"></i>Episodes
+      </a>
+
+      <a class="nav-link {{ request()->routeIs('distribution*') ? 'active' : '' }}"
+         href="{{ route('distribution') }}"
+         @if(request()->routeIs('distribution*')) aria-current="page" @endif>
+        <i class="bi bi-broadcast-pin me-2"></i>Distribution
+      </a>
+
+      <a class="nav-link {{ request()->routeIs('statistics*') ? 'active' : '' }}"
+         href="{{ route('statistics') }}"
+         @if(request()->routeIs('statistics*')) aria-current="page" @endif>
+        <i class="bi bi-graph-up-arrow me-2"></i>Statistics
+      </a>
+
+      <a class="nav-link {{ request()->routeIs('monetization*') ? 'active' : '' }}"
+         href="{{ route('monetization') }}"
+         @if(request()->routeIs('monetization*')) aria-current="page" @endif>
+        <i class="bi bi-currency-dollar me-2"></i>Monetization
+      </a>
+
+      <a class="nav-link {{ request()->routeIs('settings*') ? 'active' : '' }}"
+         href="{{ route('settings') }}"
+         @if(request()->routeIs('settings*')) aria-current="page" @endif>
+        <i class="bi bi-gear me-2"></i>Settings
+      </a>
+    </nav>
+
+    <div class="upgrade">
+      {{-- No href="#" placeholder: use a button to avoid adding # to URL --}}
+      <button type="button" class="btn btn-outline-light w-100">
+        <i class="bi bi-stars me-1"></i>Upgrade
+      </button>
+    </div>
+  </aside>
+
+  {{-- Mobile backdrop --}}
+  <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+  {{-- Topbar --}}
+  <header class="topbar d-flex align-items-center justify-content-between px-3 px-lg-4 py-2">
+    <div class="d-lg-none">
+      <button class="btn btn-outline-secondary" id="openSidebar" type="button">
+        <i class="bi bi-list"></i>
+      </button>
+    </div>
+
+    <h1 class="h5 mb-0">@yield('page-title', 'Dashboard')</h1>
+
+    <div class="d-flex align-items-center gap-2">
+      {{-- Use buttons until you wire real routes --}}
+      <button type="button" class="btn btn-dark">
+        <i class="bi bi-plus-lg me-1"></i>New Episode
+      </button>
+
+      <button type="button" class="btn btn-outline-secondary d-none d-sm-inline-flex">
+        <i class="bi bi-life-preserver me-1"></i>Support
+      </button>
+
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" type="button">
+          <i class="bi bi-person-circle me-1"></i>{{ auth()->user()->name ?? 'User' }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li>
+            <a class="dropdown-item" href="{{ route('profile.edit') }}">
+              <i class="bi bi-person me-2"></i>Profile
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" href="{{ route('settings') }}">
+              <i class="bi bi-gear me-2"></i>Settings
+            </a>
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <form method="POST" action="{{ route('logout') }}">
+              @csrf
+              <button class="dropdown-item text-danger" type="submit">
+                <i class="bi bi-box-arrow-right me-2"></i>Logout
+              </button>
+            </form>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  {{-- Main Content --}}
+  <main class="main p-3 p-lg-4">
+    @yield('content')
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Mobile sidebar toggle + safety net
+  (function () {
+    const sidebar  = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const openBtn  = document.getElementById('openSidebar');
+
+    if (openBtn) {
+      openBtn.addEventListener('click', () => {
+        sidebar.classList.add('show');
+        backdrop.classList.add('show');
+      });
+    }
+    if (backdrop) {
+      backdrop.addEventListener('click', () => {
+        sidebar.classList.remove('show');
+        backdrop.classList.remove('show');
+      });
+    }
+
+    // Prevent any stray anchors with href="#" from hijacking URL
+    document.querySelectorAll('a[href="#"]').forEach(a=>{
+      a.addEventListener('click', e=> e.preventDefault());
+    });
+  })();
+</script>
+
+@stack('scripts')
+</body>
 </html>

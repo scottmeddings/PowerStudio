@@ -9,12 +9,16 @@ class DashboardController extends Controller
 {
     public function index(Request $request)
     {
-        // minimal example – keep whatever metrics you already had
-        $yesterdayDownloads = Download::whereDate('created_at', now()->subDay())->count();
-        $last7  = Download::where('created_at', '>=', now()->subDays(7))->count();
-        $last30 = Download::where('created_at', '>=', now()->subDays(30))->count();
-        $all    = Download::count();
+        // Collect metrics
+        $metrics = [
+            'yesterday' => Download::whereDate('created_at', now()->subDay())->count(),
+            'last7'     => Download::where('created_at', '>=', now()->subDays(7))->count(),
+            'last30'    => Download::where('created_at', '>=', now()->subDays(30))->count(),
+            'allTime'   => Download::count(),
+        ];
 
-        return view('dashboard', compact('yesterdayDownloads','last7','last30','all'));
+        // Pass the array so your dashboard.blade.php can use $metrics['...']
+        return view('pages.dashboard', compact('metrics'));
+
     }
 }
