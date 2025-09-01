@@ -13,7 +13,7 @@
           <div class="value">{{ $metrics['yesterday'] ?? 0 }}</div>
           <svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none">
             <polyline fill="none" stroke="#22c55e" stroke-width="2"
-                      points="2,18 15,12 28,16 41,24 54,10 67,12 80,8 93,20"/>
+              points="2,18 15,12 28,16 41,24 54,10 67,12 80,8 93,20"/>
           </svg>
         </div>
       </div>
@@ -24,9 +24,9 @@
         <h3>Last 7 Days Downloads</h3>
         <div class="d-flex align-items-end justify-content-between">
           <div class="value">{{ $metrics['last7'] ?? 0 }}</div>
-          <svg class="sparkline" viewBox="0 0 100 28">
+          <svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none">
             <polyline fill="none" stroke="#16a34a" stroke-width="2"
-                      points="2,20 15,18 28,14 41,16 54,12 67,8 80,12 93,10"/>
+              points="2,20 15,18 28,14 41,16 54,12 67,8 80,12 93,10"/>
           </svg>
         </div>
       </div>
@@ -37,9 +37,9 @@
         <h3>Last 30 Days Downloads</h3>
         <div class="d-flex align-items-end justify-content-between">
           <div class="value">{{ $metrics['last30'] ?? 0 }}</div>
-          <svg class="sparkline" viewBox="0 0 100 28">
+          <svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none">
             <polyline fill="none" stroke="#06b6d4" stroke-width="2"
-                      points="2,22 15,16 28,14 41,10 54,16 67,14 80,12 93,16"/>
+              points="2,22 15,16 28,14 41,10 54,16 67,14 80,12 93,16"/>
           </svg>
         </div>
       </div>
@@ -50,18 +50,18 @@
         <h3>All Time Downloads</h3>
         <div class="d-flex align-items-end justify-content-between">
           <div class="value">{{ $metrics['allTime'] ?? 0 }}</div>
-          <svg class="sparkline" viewBox="0 0 100 28">
+          <svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none">
             <polyline fill="none" stroke="#f59e0b" stroke-width="2"
-                      points="2,22 15,20 28,18 41,16 54,14 67,12 80,10 93,12"/>
+              points="2,22 15,20 28,18 41,16 54,14 67,12 80,10 93,12"/>
           </svg>
         </div>
       </div>
     </div>
   </div>
 
-  {{-- Main row: Trending + Episode Performance / Right rail --}}
+  {{-- Main content --}}
   <div class="row g-3 mt-1">
-    {{-- Downloads Trending + Episode Performance --}}
+    {{-- Left: Trending + Episode Performance --}}
     <div class="col-lg-8">
       <div class="section-card p-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -134,29 +134,47 @@
       </div>
     </div>
 
-    {{-- Right rail --}}
+    {{-- Right: Achievements + Comments --}}
     <div class="col-lg-4">
+      @php
+        $unlocked = collect($achUnlocked ?? []);
+        $locked   = collect($achLocked ?? []);
+        $show     = $unlocked->take(2);
+        if ($show->isEmpty()) { $show = $locked->take(2); }
+      @endphp
+
       <div class="section-card p-3">
         <h5 class="mb-3">Achievements</h5>
-        <div class="d-flex align-items-start gap-3 mb-3">
-          <span class="badge-icon" style="width:36px;height:36px;border-radius:999px;display:inline-grid;place-items:center;background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;">
-            <i class="bi bi-trophy"></i>
-          </span>
-          <div>
-            <div class="fw-semibold">Congratulations on <strong>2,000</strong> Downloads!</div>
-            <small class="text-secondary">Nice milestone.</small>
+
+        @forelse($show as $a)
+          <div class="d-flex align-items-start gap-3 mb-3">
+            <span class="badge-icon"
+                  style="width:36px;height:36px;border-radius:999px;display:inline-grid;place-items:center;background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;">
+              <i class="bi {{ $a['icon'] }}"></i>
+            </span>
+            <div>
+              <div class="fw-semibold">
+                {{ $a['title'] }}
+                @if($a['unlocked'])
+                  <span class="text-success ms-1">✓</span>
+                @endif
+              </div>
+              <small class="text-secondary">
+                {{ $a['desc'] }}
+                @unless($a['unlocked'])
+                  · {{ number_format($a['remaining']) }} to go
+                @endunless
+              </small>
+            </div>
           </div>
-        </div>
-        <div class="d-flex align-items-start gap-3">
-          <span class="badge-icon" style="width:36px;height:36px;border-radius:999px;display:inline-grid;place-items:center;background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;">
-            <i class="bi bi-award"></i>
-          </span>
-          <div>
-            <div class="fw-semibold">Congratulations on publishing <strong>10 episodes!</strong></div>
-            <small class="text-secondary">Keep the momentum.</small>
-          </div>
-        </div>
-        <a href="{{ route('statistics') }}" class="btn btn-outline-secondary w-100 mt-3">View Badges</a>
+        @empty
+          <div class="text-secondary">No achievements yet.</div>
+        @endforelse
+
+        <button class="btn btn-outline-secondary w-100 mt-2"
+                data-bs-toggle="modal" data-bs-target="#achievementsModal">
+          View Badges
+        </button>
       </div>
 
       <div class="section-card p-4 mt-3 text-center">
@@ -169,3 +187,54 @@
     </div>
   </div>
 @endsection
+
+{{-- Modal lives in the global @stack so it’s rendered at the end of <body> --}}
+@push('modals')
+<div class="modal fade" id="achievementsModal" tabindex="-1" aria-labelledby="achievementsTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 id="achievementsTitle" class="modal-title">All Achievements</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        @foreach(collect($allAchievements ?? []) as $a)
+          <div class="d-flex align-items-start justify-content-between py-2 border-bottom">
+            <div class="d-flex align-items-start gap-3">
+              <span class="badge-icon"
+                    style="width:36px;height:36px;border-radius:999px;display:inline-grid;place-items:center;background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;">
+                <i class="bi {{ $a['icon'] }}"></i>
+              </span>
+              <div>
+                <div class="fw-semibold">
+                  {{ $a['title'] }}
+                  @if($a['unlocked'])
+                    <span class="badge text-bg-success ms-2">Unlocked</span>
+                  @else
+                    <span class="badge text-bg-secondary ms-2">Locked</span>
+                  @endif
+                </div>
+                <small class="text-secondary">{{ $a['desc'] }}</small>
+              </div>
+            </div>
+            <div class="text-end" style="min-width:140px">
+              <small class="text-secondary d-block mb-1">
+                {{ number_format($a['current']) }} / {{ number_format($a['threshold']) }}
+              </small>
+              <div class="progress" style="height:6px;">
+                <div class="progress-bar {{ $a['unlocked'] ? 'bg-success' : '' }}"
+                     style="width: {{ $a['progress'] }}%"></div>
+              </div>
+            </div>
+          </div>
+        @endforeach
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+@endpush

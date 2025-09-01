@@ -10,7 +10,9 @@ use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\PageController;   // <-- missing before
+use App\Http\Controllers\EpisodeController;
+use App\Http\Controllers\PageController; 
+use App\Http\Controllers\TestController;
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +69,8 @@ Route::middleware('auth')->group(function () {
         return back()->with('status', 'verification-link-sent');
     })->middleware('throttle:6,1')->name('verification.send');
 
+
+
     // Password & profile
     Route::put('/password', [PasswordController::class, 'update'])->name('password.update');
 
@@ -75,8 +79,25 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile',[ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // Core app pages (require verified account if you want — toggle middleware as needed)
-Route::middleware('auth')->group(function () {
+    Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+   
+
+    Route::get('/episodes/create',        [EpisodeController::class, 'create'])->name('episodes.create');
+    Route::post('/episodes',              [EpisodeController::class, 'store'])->name('episodes.store');
+
+    Route::get('/episodes/{episode}/edit',[EpisodeController::class, 'edit'])->name('episodes.edit');
+    Route::put('/episodes/{episode}',     [EpisodeController::class, 'update'])->name('episodes.update');
+    Route::delete('/episodes/{episode}',  [EpisodeController::class, 'destroy'])->name('episodes.destroy');
+
+
+
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/test/totals', [TestController::class, 'totals'])->name('test.totals');
+    });
+
+
 
     // Left-menu pages
     Route::get('/episodes',      [PageController::class, 'episodes'])->name('episodes');
