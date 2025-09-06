@@ -1,10 +1,23 @@
+{{-- resources/views/pages/settings.blade.php --}}
 @extends('layouts.app')
 
 @section('title', 'Settings')
 @section('page-title', 'settings')
 
+@push('styles')
+<style>
+  .cover-tile{ border:1px dashed rgba(0,0,0,.12); }
+  .muted-hint{ color:#6b7280; font-size:.85rem; }
+</style>
+@endpush
+
 @section('content')
+
+
 @php($u = auth()->user())
+@php($coverUrl = $u->podcast_cover_url
+    ?? $u->cover_url
+    ?? ($u->cover_path ? \Storage::url($u->cover_path) : null))
 
 {{-- Flash messages --}}
 @if (session('status'))
@@ -20,7 +33,7 @@
 @endif
 
 <div class="row g-3">
-  {{-- Account --}}
+  {{-- Account / Security (left) --}}
   <div class="col-12 col-lg-7">
     <div class="section-card p-4">
       <h5 class="mb-3">Account</h5>
@@ -44,7 +57,6 @@
           @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
         </div>
 
-        {{-- Optional: show verification status if you use email verification --}}
         @if (method_exists($u, 'hasVerifiedEmail') && !$u->hasVerifiedEmail())
           <div class="alert alert-warning d-flex align-items-center" role="alert">
             <i class="bi bi-envelope-exclamation me-2"></i>
@@ -56,15 +68,12 @@
           </div>
         @endif
 
-        <div class="d-flex gap-2">
-          <button class="btn btn-dark" type="submit">
-            <i class="bi bi-save me-1"></i>Save changes
-          </button>
-        </div>
+        <button class="btn btn-dark" type="submit">
+          <i class="bi bi-save me-1"></i>Save changes
+        </button>
       </form>
     </div>
 
-    {{-- Password --}}
     <div class="section-card p-4 mt-3">
       <h5 class="mb-3">Security</h5>
       <form method="POST" action="{{ route('password.update') }}">
@@ -90,34 +99,65 @@
           </div>
         </div>
 
-        <div class="d-flex gap-2 mt-3">
-          <button class="btn btn-dark" type="submit">
-            <i class="bi bi-shield-lock me-1"></i>Update password
-          </button>
-        </div>
+        <button class="btn btn-dark mt-3" type="submit">
+          <i class="bi bi-shield-lock me-1"></i>Update password
+        </button>
       </form>
     </div>
   </div>
 
   {{-- Right rail --}}
   <div class="col-12 col-lg-5">
- {{-- RSS / API (read-only helpers) --}}
-<div class="section-card p-4">
-  <h6 class="mb-2">Podcast RSS</h6>
 
-  <div class="input-group mb-2">
-    <input type="text" class="form-control" id="rssUrl"
-           value="{{ $rss ?? url('/feed/podcast.xml') }}" readonly>
-    <button type="button" class="btn btn-outline-secondary" id="copyRss">
-      <i class="bi bi-clipboard-check"></i> Copy
-    </button>
-  </div>
+    {{-- NEW: Podcast Cover Art --}}
+    <div class="section-card p-3 cover-tile text-center">
+      <h6 class="mb-2">Podcast Cover Art</h6>
 
-  <small class="text-secondary">
-    Submit this URL to directories (Apple, Spotify, etc.).
-  </small>
-</div>
+      <img
+        src="{{ $coverUrl ?: 'https://placehold.co/480x480?text=Cover' }}"
+        alt="Podcast cover"
+        class="img-fluid rounded mb-2">
 
+      <form method="POST" action="{{ route('settings.cover.upload') }}"
+            enctype="multipart/form-data" class="d-grid gap-2">
+        @csrf
+        <input id="coverInput" type="file" name="cover"
+               accept="image/png,image/jpeg" class="form-control">
+        @error('cover') <div class="text-danger small">{{ $message }}</div> @enderror
+
+        <button class="btn btn-outline-secondary" type="submit">
+          <i class="bi bi-upload me-1"></i>Upload image
+        </button>
+      </form>
+
+      @if($coverUrl)
+        <form method="POST" action="{{ route('settings.cover.delete') }}" class="mt-2">
+          @csrf @method('DELETE')
+          <button class="btn btn-outline-danger btn-sm" type="submit">
+            <i class="bi bi-trash me-1"></i>Remove cover
+          </button>
+        </form>
+      @endif
+
+      <div class="muted-hint mt-2">
+        Recommended: square JPG/PNG between 1400 and 2048 px.
+      </div>
+    </div>
+
+    {{-- RSS --}}
+    <div class="section-card p-4 mt-3">
+      <h6 class="mb-2">Podcast RSS</h6>
+      <div class="input-group mb-2">
+        <input type="text" class="form-control" id="rssUrl"
+               value="{{ $rss ?? url('/feed/podcast.xml') }}" readonly>
+        <button type="button" class="btn btn-outline-secondary" id="copyRss">
+          <i class="bi bi-clipboard-check"></i> Copy
+        </button>
+      </div>
+      <small class="text-secondary">
+        Submit this URL to directories (Apple, Spotify, etc.).
+      </small>
+    </div>
 
     {{-- Danger Zone --}}
     <div class="section-card p-4 mt-3">

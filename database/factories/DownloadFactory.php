@@ -2,23 +2,24 @@
 
 namespace Database\Factories;
 
+use App\Models\Download;
+use App\Models\Episode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Download>
- */
 class DownloadFactory extends Factory
 {
+    protected $model = Download::class;
+
     public function definition(): array
     {
-        return [
-            // Distribute across the last 90 days
-            'created_at' => fake()->dateTimeBetween('-90 days', 'now'),
-            'updated_at' => now(),
+        $ts = $this->faker->dateTimeBetween('-90 days', 'now');
 
-            // add your model’s extra columns here if you have them
-            // e.g. 'episode_id' => fake()->numberBetween(1, 10),
-            //      'user_id'    => fake()->numberBetween(1, 50),
+        return [
+            'episode_id' => Episode::query()->inRandomOrder()->value('id') ?? Episode::factory(),
+            'user_agent' => $this->faker->userAgent(),
+            'ip_address' => $this->faker->ipv4(),
+            'created_at' => $ts,
+            'updated_at' => $ts,
         ];
     }
 }

@@ -6,14 +6,13 @@ use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
         $this->call([
             DemoDataSeeder::class,
-            DownloadSeeder::class,   // ✅ add this line
+            DownloadSeeder::class, 
+            PowerTimeSeeder::class,  // include if you want it in the default run
         ]);
     }
 }
+

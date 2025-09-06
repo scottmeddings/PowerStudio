@@ -65,6 +65,66 @@
     .tile h3{ font-size:.9rem; color:#64748b; margin:0 0 .3rem; }
     .tile .value{ font-weight:700; font-size:1.75rem; }
 
+    /* Compact helpers (used by Episodes, but handy everywhere) */
+    .section-card.compact{ padding:.5rem .5rem 0; border-radius:.6rem; }
+    .badge-compact{ font-size:.72rem; font-weight:600; padding:.28rem .45rem; }
+    .pill-compact{ font-size:.72rem; padding:.25rem .5rem; }
+    .btn-xs{
+      --bs-btn-padding-y:.28rem;
+      --bs-btn-padding-x:.55rem;
+      --bs-btn-font-size:.78rem;
+      line-height:1.15;
+    }
+    .header-compact{ margin-bottom:.6rem; }
+
+    /* Blush buttons (global) */
+    .btn-blush{
+      --blush:#ec4899;         /* pink-500 */
+      --blush-dark:#db2777;    /* pink-600 */
+      --blush-darker:#be185d;  /* pink-700 */
+      color:#fff;
+      background:linear-gradient(135deg,#fb7185,#f472b6);
+      border-color:var(--blush);
+      box-shadow:0 .35rem 1rem rgba(236,72,153,.25);
+    }
+    .btn-blush:hover{
+      color:#fff;
+      background:linear-gradient(135deg,var(--blush-dark),#ec4899);
+      border-color:var(--blush-dark);
+    }
+    .btn-blush:active{
+      background:linear-gradient(135deg,var(--blush-darker),var(--blush-dark));
+      border-color:var(--blush-darker);
+    }
+    .btn-blush:focus{
+      outline:0;
+      box-shadow:0 .25rem .75rem rgba(236,72,153,.35),0 0 0 .2rem rgba(236,72,153,.25);
+    }
+    i.bi, .bi, svg.bi {
+    font-size: 1rem;       /* keeps icons from ballooning */
+    line-height: 1;
+    position: static;
+    max-width: 1em;
+    max-height: 1em;
+    }
+    
+
+    /* Bootstrap caret (dropdown) triangles: keep them tiny */
+    .dropdown-toggle::after {
+    border-width: .3em;    /* default caret size */
+    }
+    .btn-outline-blush{
+      --blush:#ec4899;
+      color:var(--blush);
+      border-color:var(--blush);
+      background:transparent;
+    }
+    .btn-outline-blush:hover{
+      color:#fff;
+      background:var(--blush);
+      border-color:var(--blush);
+    }
+
     /* Mobile sidebar */
     @media (max-width:992px){
       .app{ grid-template-columns:1fr; grid-template-areas:"topbar" "main"; }
@@ -138,7 +198,8 @@
     <h1 class="h5 mb-0">@yield('page-title', 'Dashboard')</h1>
 
     <div class="d-flex align-items-center gap-2">
-      <a class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#episodeModal">
+      {{-- New Episode opens global modal (now blush) --}}
+      <a class="btn btn-blush" data-bs-toggle="modal" data-bs-target="#episodeModal">
         <i class="bi bi-plus-lg me-1"></i>New Episode
       </a>
 

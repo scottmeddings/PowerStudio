@@ -3,19 +3,19 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use App\Models\Episode;
 use App\Models\Download;
+use Database\Factories\DownloadFactory;
 
 class DownloadSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Optional: wipe existing rows first
-        Download::truncate();
+        if (Episode::count() === 0) {
+            Episode::factory()->count(10)->create();
+        }
 
-        // Generate 500 fake download records
-        Download::factory()->count(500)->create();
+        Download::query()->delete();
+        DownloadFactory::new()->count(500)->create();
     }
 }

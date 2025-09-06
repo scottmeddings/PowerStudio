@@ -1,157 +1,188 @@
-{{-- resources/views/pages/test_totals.blade.php --}}
+{{-- resources/views/pages/db_inspector.blade.php --}}
 @extends('layouts.app')
 
-@section('title', 'Test Totals')
-@section('page-title', 'test totals')
+@section('title', 'DB Inspector')
+@section('page-title', 'DB Inspector')
+
+@push('styles')
+<style>
+  .table-fixed-header thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+  .card-like { background:#fff;border:1px solid rgba(0,0,0,.06);border-radius:.75rem;box-shadow:0 10px 30px rgba(0,0,0,.03); }
+  .small-muted { color:#6b7280; font-size:.9rem; }
+  .mono { font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; }
+</style>
+@endpush
 
 @section('content')
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0">Database Totals</h5>
-    <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left-short"></i> Back to Dashboard
-    </a>
-  </div>
+@php
+    /** @var \Illuminate\Database\ConnectionInterface $conn */
+    $conn   = DB::connection();
+    $driver = $conn->getDriverName();
+@endphp
 
-  {{-- High-level tiles --}}
-  <div class="row g-3">
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="tile">
-        <h3>Users</h3>
-        <div class="d-flex align-items-end justify-content-between">
-          <div class="value">{{ number_format($totals['users'] ?? 0) }}</div>
-          <i class="bi bi-people"></i>
-        </div>
-      </div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">Database Inspector</h5>
+  <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left-short"></i> Back to Dashboard
+  </a>
+</div>
+
+{{-- Connection summary --}}
+<div class="card-like p-3 mb-3">
+  <div class="row g-3 align-items-center">
+    <div class="col-md-6">
+      <div class="small-muted">Driver</div>
+      <div class="fw-semibold text-capitalize">{{ $driver }}</div>
     </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="tile">
-        <h3>Episodes</h3>
-        <div class="d-flex align-items-end justify-content-between">
-          <div class="value">{{ number_format($totals['episodes'] ?? 0) }}</div>
-          <i class="bi bi-mic"></i>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="tile">
-        <h3>Downloads (All)</h3>
-        <div class="d-flex align-items-end justify-content-between">
-          <div class="value">{{ number_format($totals['downloads'] ?? 0) }}</div>
-          <i class="bi bi-cloud-download"></i>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="tile">
-        <h3>Downloads 30d</h3>
-        <div class="d-flex align-items-end justify-content-between">
-          <div class="value">{{ number_format($totals['last30'] ?? ($totals['downloads_last30'] ?? 0)) }}</div>
-          <i class="bi bi-bar-chart"></i>
-        </div>
-      </div>
+    <div class="col-md-6">
+      @if($driver === 'sqlite')
+        @php $dbPath = $conn->getConfig('database'); @endphp
+        <div class="small-muted">SQLite file</div>
+        <div class="mono">{{ $dbPath ?: database_path('database.sqlite') }}</div>
+      @endif
     </div>
   </div>
+</div>
 
-  <div class="row g-3 mt-1">
-    {{-- Episodes by status --}}
-    <div class="col-lg-6">
-      <div class="section-card p-3">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <h6 class="mb-0">Episodes by Status</h6>
-          <span class="text-secondary small">
-            total: {{ number_format($totals['episodes'] ?? 0) }}
-          </span>
-        </div>
-        <div class="table-responsive mt-2">
-          <table class="table align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Status</th>
-                <th class="text-end">Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              @forelse($episodesByStatus as $row)
-                <tr>
-                  <td class="text-capitalize">{{ $row->status ?? 'unknown' }}</td>
-                  <td class="text-end">{{ number_format($row->c ?? 0) }}</td>
-                </tr>
-              @empty
-                <tr><td colspan="2" class="text-secondary text-center py-3">No data or column missing.</td></tr>
-              @endforelse
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+@php
+    $tables      = collect();
+    $tableCounts = collect();
+    $errorNote   = null;
 
-    {{-- Top episodes by downloads --}}
-    <div class="col-lg-6">
-      <div class="section-card p-3">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <h6 class="mb-0">Top Episodes by Downloads</h6>
-          <span class="text-secondary small">
-            7d: {{ number_format($totals['downloads_last7'] ?? 0) }} · 30d: {{ number_format($totals['downloads_last30'] ?? 0) }}
-          </span>
-        </div>
-        <div class="table-responsive mt-2">
-          <table class="table align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Title</th>
-                <th class="text-end">Downloads</th>
-              </tr>
-            </thead>
-            <tbody>
-              @forelse($topEpisodes as $row)
-                <tr>
-                  <td class="text-truncate" style="max-width: 420px;">{{ $row->title }}</td>
-                  <td class="text-end">{{ number_format($row->downloads_count) }}</td>
-                </tr>
-              @empty
-                <tr><td colspan="2" class="text-secondary text-center py-3">No downloads or missing episode_id.</td></tr>
-              @endforelse
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    if ($driver === 'sqlite') {
+        try {
+            $tables = collect(DB::select(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ))->pluck('name')->sort()->values();
 
-    {{-- Table counts (DB-wide) --}}
-    <div class="col-12">
-      <div class="section-card p-3">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <h6 class="mb-0">All Tables — Row Counts</h6>
-          @if($tableCountsError)
-            <span class="badge text-bg-warning">Note</span>
-          @endif
-        </div>
-        @if($tableCountsError)
-          <div class="small text-secondary mb-2">
-            Best-effort listing ({{ $tableCountsError }}). Unsupported drivers will show nothing here.
+            foreach ($tables as $t) {
+                try {
+                    $tableCounts[$t] = DB::table($t)->count();
+                } catch (\Throwable $e) {
+                    $tableCounts[$t] = '—';
+                }
+            }
+        } catch (\Throwable $e) {
+            $errorNote = $e->getMessage();
+        }
+    } else {
+        $errorNote = 'This view is optimized for SQLite. (You can extend it for other drivers.)';
+    }
+@endphp
+
+{{-- All tables — row counts --}}
+<div class="card-like p-3 mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h6 class="mb-0">All Tables — Row Counts</h6>
+    @if($errorNote)
+      <span class="badge text-bg-warning">Note</span>
+    @endif
+  </div>
+  @if($errorNote)
+    <div class="small-muted mb-2">{{ $errorNote }}</div>
+  @endif
+
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Table</th>
+          <th class="text-end">Rows</th>
+        </tr>
+      </thead>
+      <tbody>
+        @forelse($tableCounts as $name => $count)
+          <tr>
+            <td class="mono">{{ $name }}</td>
+            <td class="text-end">{{ is_numeric($count) ? number_format($count) : $count }}</td>
+          </tr>
+        @empty
+          <tr><td colspan="2" class="text-center text-secondary py-3">No tables found.</td></tr>
+        @endforelse
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{-- Per-table data (SQLite) --}}
+@if($driver === 'sqlite' && $tables->isNotEmpty())
+  @foreach($tables as $tname)
+    @php
+        // Limit rows per table to keep the page responsive
+        $limit = 200;
+
+        // Fetch rows
+        try {
+            $rows = collect(DB::table($tname)->limit($limit)->get());
+        } catch (\Throwable $e) {
+            $rows = collect();
+        }
+
+        // Column list: prefer row keys; if empty table, use PRAGMA table_info
+        $columns = [];
+        if ($rows->isNotEmpty()) {
+            $columns = array_keys((array) $rows->first());
+        } else {
+            try {
+                // PRAGMA: show columns even when the table is empty
+                $pragma = DB::select("PRAGMA table_info('$tname')");
+                $columns = collect($pragma)->pluck('name')->all();
+            } catch (\Throwable $e) {
+                $columns = [];
+            }
+        }
+
+        $total = $tableCounts[$tname] ?? '—';
+    @endphp
+
+    <div class="card-like p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <h6 class="mb-0 mono">{{ $tname }}</h6>
+          <div class="small-muted">
+            Showing {{ number_format(min(is_numeric($total) ? $total : 0, $limit)) }} of
+            {{ is_numeric($total) ? number_format($total) : $total }} rows
           </div>
-        @endif
-        <div class="table-responsive mt-2">
-          <table class="table align-middle mb-0">
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#t_{{ md5($tname) }}">
+          Toggle Data
+        </button>
+      </div>
+
+      <div id="t_{{ md5($tname) }}" class="collapse show mt-3">
+        <div class="table-responsive" style="max-height: 420px; overflow:auto;">
+          <table class="table table-sm table-striped table-fixed-header mb-0">
             <thead class="table-light">
               <tr>
-                <th>Table</th>
-                <th class="text-end">Rows</th>
+                @forelse($columns as $col)
+                  <th class="mono">{{ $col }}</th>
+                @empty
+                  <th class="text-secondary">No columns detected</th>
+                @endforelse
               </tr>
             </thead>
             <tbody>
-              @forelse($tableCounts as $name => $count)
+              @forelse($rows as $r)
+                @php $arr = (array) $r; @endphp
                 <tr>
-                  <td class="font-monospace">{{ $name }}</td>
-                  <td class="text-end">{{ is_numeric($count) ? number_format($count) : $count }}</td>
+                  @foreach($columns as $col)
+                    <td class="mono">
+                      {{ isset($arr[$col]) ? (is_scalar($arr[$col]) ? (string)$arr[$col] : json_encode($arr[$col])) : '' }}
+                    </td>
+                  @endforeach
                 </tr>
               @empty
-                <tr><td colspan="2" class="text-secondary text-center py-3">No table data available.</td></tr>
+                <tr>
+                  <td colspan="{{ max(count($columns),1) }}" class="text-secondary text-center py-3">
+                    No data in this table yet.
+                  </td>
+                </tr>
               @endforelse
             </tbody>
           </table>
         </div>
       </div>
     </div>
-  </div>
+  @endforeach
+@endif
 @endsection

@@ -6,6 +6,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
+
 
 class User extends Authenticatable
 {
@@ -44,5 +46,12 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+    public function getCoverImageUrlAttribute(): ?string
+    {
+        if ($this->podcast_cover_url) return $this->podcast_cover_url;
+        if ($this->cover_url)        return $this->cover_url;
+        if ($this->cover_path)       return Storage::url($this->cover_path);
+        return null;
     }
 }
