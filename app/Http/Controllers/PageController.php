@@ -5,11 +5,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Episode;
 use App\Models\Download;
-use App\Models\PodcastDirectory;        // make:model PodcastDirectory as per earlier step
+use App\Models\PodcastDirectory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class PageController extends Controller
 {
@@ -38,13 +39,26 @@ class PageController extends Controller
         // Feed URL (swap for your real route if different)
         $rss = url('/feed/podcast.xml');
 
-        // KPI tiles for the header include
-        $yesterday = Download::whereDate('created_at', now()->subDay())->count();
-        $last7     = Download::where('created_at', '>=', now()->subDays(7))->count();
-        $last30    = Download::where('created_at', '>=', now()->subDays(30))->count();
-        $allTime   = Download::count();
+        // ---- KPI tiles (per *current user* episodes) ----
+        $episodeIds = Episode::where('user_id', Auth::id())->pluck('id');
 
-        // Directory definitions (icon is the CSS modifier your Blade uses; color is a fallback inline bg)
+        $base = Download::query()
+            ->when($episodeIds->isNotEmpty(), fn ($q) => $q->whereIn('episode_id', $episodeIds));
+
+        $yesterday = (clone $base)->whereDate('created_at', now()->subDay()->toDateString())->count();
+        // Inclusive 7/30 days (today + previous 6/29 days)
+        $last7     = (clone $base)->where('created_at', '>=', now()->subDays(6)->startOfDay())->count();
+        $last30    = (clone $base)->where('created_at', '>=', now()->subDays(29)->startOfDay())->count();
+        $allTime   = (clone $base)->count();
+
+        $stats = [
+            ['label' => 'Yesterday Downloads',   'value' => $yesterday, 'color' => 'green'],
+            ['label' => 'Last 7 Days Downloads', 'value' => $last7,     'color' => 'green'],
+            ['label' => 'Last 30 Days Downloads','value'=> $last30,     'color' => 'blue'],
+            ['label' => 'All Time Downloads',    'value' => $allTime,   'color' => 'orange'],
+        ];
+
+        // ---- Directories (one canonical build) ----
         $defaults = [
             'apple'        => ['name' => 'Apple Podcasts', 'icon' => 'pi-apple',   'color' => '#a970ff'],
             'spotify'      => ['name' => 'Spotify',        'icon' => 'pi-spotify', 'color' => '#1db954'],
@@ -59,42 +73,23 @@ class PageController extends Controller
             'pandora'      => ['name' => 'Pandora',        'icon' => 'pi-pand',    'color' => '#224099'],
         ];
 
-        // Pull saved config for this user (ok if table/model exists; otherwise empty)
         $saved = class_exists(PodcastDirectory::class)
             ? PodcastDirectory::where('user_id', Auth::id())->get()->keyBy('slug')
             : collect();
-// inside PageController@distribution
 
-        $rows = class_exists(\App\Models\PodcastDirectory::class)
-            ? \App\Models\PodcastDirectory::where('user_id', \Auth::id())->get()->keyBy('slug')
-            : collect();
-
-        $directories = collect($defaults)->map(function ($meta, $slug) use ($rows) {
-            $r = $rows->get($slug);
-            return [
-                'slug'         => $slug,
-                'name'         => $meta['name'],
-                'icon'         => $meta['icon'],
-                'connected'    => (bool) optional($r)->is_connected, // <-- important
-                'external_url' => optional($r)->external_url,
-                'id'           => optional($r)->id,
-            ];
-        });
-        // Build structures the Blade expects
         $directories = collect($defaults)->map(function (array $meta, string $slug) use ($saved) {
             $row = $saved->get($slug);
             return [
                 'slug'         => $slug,
                 'name'         => $meta['name'],
-                'icon'         => $meta['icon'],                   // CSS class suffix used in your view
-                'color'        => $meta['color'],                  // inline background fallback
+                'icon'         => $meta['icon'],                   // CSS class suffix used by Blade
+                'color'        => $meta['color'],                  // inline fallback
                 'connected'    => (bool) optional($row)->is_connected,
                 'external_url' => optional($row)->external_url,
                 'id'           => optional($row)->id,
             ];
-        })->values(); // ensure numeric keys for @foreach
+        })->values();
 
-        // Quick map for dot/badge state
         $connected = $directories->mapWithKeys(fn ($d) => [$d['slug'] => $d['connected']])->all();
 
         return view('pages.distribution', compact(
@@ -105,6 +100,7 @@ class PageController extends Controller
             'last7',
             'last30',
             'allTime',
+            'stats'
         ));
     }
 
@@ -124,10 +120,70 @@ class PageController extends Controller
         $u   = Auth::user();
         $rss = url('/feed/podcast.xml');
 
-        // Requires: php artisan storage:link
+        // If you still use a podcast cover on the right pane, keep this:
         $coverUrl = $u?->cover_path ? Storage::url($u->cover_path) : null;
 
         return view('pages.settings', compact('rss', 'u', 'coverUrl'));
+    }
+
+    /**
+     * Update basic account fields (name/email).
+     */
+    public function updateAccount(Request $request)
+    {
+        $u = $request->user();
+
+        $data = $request->validate([
+            'name'  => ['required','string','max:190'],
+            'email' => ['required','email','max:190', Rule::unique('users','email')->ignore($u->id)],
+        ]);
+
+        $u->fill($data)->save();
+
+        return back()->with('success', 'Account updated.');
+    }
+
+    /**
+     * Upload/replace profile photo.
+     * Stores under storage/app/public/avatars and updates users.profile_photo_path.
+     */
+    public function uploadProfilePhoto(Request $request)
+    {
+        $request->validate([
+            'photo' => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
+        ]);
+
+        $u = $request->user();
+
+        // Store new file
+        $path = $request->file('photo')->store('avatars', 'public');
+
+        // Delete previous if present
+        if ($u->profile_photo_path && Storage::disk('public')->exists($u->profile_photo_path)) {
+            Storage::disk('public')->delete($u->profile_photo_path);
+        }
+
+        $u->profile_photo_path = $path;
+        $u->save();
+
+        return back()->with('success', 'Profile photo updated.');
+    }
+
+    /**
+     * Remove profile photo (reverts to default avatar/gravatar).
+     */
+    public function removeProfilePhoto(Request $request)
+    {
+        $u = $request->user();
+
+        if ($u->profile_photo_path && Storage::disk('public')->exists($u->profile_photo_path)) {
+            Storage::disk('public')->delete($u->profile_photo_path);
+        }
+
+        $u->profile_photo_path = null;
+        $u->save();
+
+        return back()->with('success', 'Profile photo removed.');
     }
 
     /**

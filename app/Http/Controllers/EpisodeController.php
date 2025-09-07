@@ -6,6 +6,8 @@ use App\Models\Episode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
+
 
 class EpisodeController extends Controller
 {
@@ -15,16 +17,17 @@ class EpisodeController extends Controller
     }
 
     /** Single source of truth for validation */
-    private function validated(Request $request): array
+    protected function validated(Request $request): array
     {
         return $request->validate([
-            'title'            => ['required','string','max:160'],
-            'description'      => ['nullable','string'],
-            'audio'            => ['nullable','file','mimetypes:audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/wave','max:512000'], // ~500MB
-            'audio_url'        => ['nullable','url'],
-            'duration_seconds' => ['nullable','integer','min:0'],
-            'status'           => ['required','in:draft,published'],
-            'published_at'     => ['nullable','date'],
+            'title'            => ['required', 'string', 'max:160'],
+            'description'      => ['nullable', 'string'],
+            'audio'            => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp4,audio/x-m4a,audio/wav', 'max:2097152'], // 2GB in KB
+            'audio_url'        => ['nullable', 'url'],
+            'duration_seconds' => ['nullable', 'integer', 'min:0'],
+            'status'           => ['required', 'in:draft,published'],
+            'published_at'     => ['nullable', 'date'],
+            'cover'            => ['nullable', 'image'],
         ]);
     }
 
@@ -208,4 +211,119 @@ class EpisodeController extends Controller
 
         return back()->with('success', 'Episode cover removed (falling back to podcast cover).');
     }
+
+
+        public function aiEnhance(Request $request, \App\Models\Episode $episode)
+        {
+            $this->authorize('update', $episode);
+
+            // 1) Find a local temp file for the audio
+            //    - If audio_url points to /storage/..., map to local storage path
+            //    - If remote URL, download to a temp file
+            $source = $episode->audio_url;
+            if (! $source) {
+                return back()->withErrors(['audio_url' => 'This episode has no audio URL to analyze.']);
+            }
+
+            $localPath = null;
+
+            try {
+                if (Str::startsWith($source, url('/storage'))) {
+                    // Map a public storage URL -> local path (storage/app/public/...)
+                    $relative = Str::after($source, url('/storage/'));
+                    $localPath = storage_path('app/public/'.$relative);
+                    if (! is_file($localPath)) {
+                        return back()->withErrors(['audio_url' => 'Could not read local audio file.']);
+                    }
+                } elseif (Str::startsWith($source, ['http://', 'https://'])) {
+                    // Remote URL: download to temp (OpenAI requires a file upload)
+                    $tmp = tmpfile();
+                    $tmpMeta = stream_get_meta_data($tmp);
+                    $localPath = $tmpMeta['uri'];
+
+                    $response = Http::timeout(120)->get($source);
+                    if (! $response->ok()) {
+                        return back()->withErrors(['audio_url' => 'Could not download the audio from the URL.']);
+                    }
+                    file_put_contents($localPath, $response->body());
+                } else {
+                    // Maybe it's already a relative storage path
+                    $maybe = storage_path('app/'.$source);
+                    if (is_file($maybe)) {
+                        $localPath = $maybe;
+                    } else {
+                        return back()->withErrors(['audio_url' => 'Unsupported audio location.']);
+                    }
+                }
+            } catch (\Throwable $e) {
+                return back()->withErrors(['audio_url' => 'Audio retrieval failed: '.$e->getMessage()]);
+            }
+
+            // OpenAI key
+            $apiKey = config('services.openai.key');
+            if (! $apiKey) {
+                return back()->withErrors(['ai' => 'Missing OPENAI_API_KEY. Add it to .env and config/services.php.']);
+            }
+
+            try {
+                    // 2) Transcribe with Whisper
+                    //    Endpoint: POST /v1/audio/transcriptions (multipart)
+                    $transcription = Http::asMultipart()
+                        ->withToken($apiKey)
+                        ->attach('file', fopen($localPath, 'r'), basename($localPath))
+                        ->post('https://api.openai.com/v1/audio/transcriptions', [
+                            'model' => 'whisper-1',            // or 'gpt-4o-mini-transcribe' if available to you
+                            'response_format' => 'text',       // keep it simple; returns plain text
+                            // 'temperature' => 0.2,
+                        ])->throw()->body(); // plain text transcript
+
+                    // 3) Ask a chat model to summarize into JSON (title/description/chapters)
+                    $prompt = <<<PROMPT
+            You are an editorial assistant for podcast show notes.
+            Given the raw transcript below, produce a compact JSON object with:
+            - "title": a compelling 60-90 character title (no quotes inside).
+            - "description": 2-4 sentence paragraph summary for the episode (plain text).
+            - "chapters": an array of objects with "start" (HH:MM:SS) and "title". Create 5-12 chapters. If you cannot infer times, set "start" to "00:00:00", "00:05:00", etc. spaced evenly.
+
+            Return ONLY valid JSON. Do not wrap it in code fences.
+
+            TRANSCRIPT:
+            {$transcription}
+            PROMPT;
+
+                    $chat = Http::withToken($apiKey)
+                        ->post('https://api.openai.com/v1/chat/completions', [
+                            'model' => 'gpt-4o-mini',  // or 'gpt-4.1-mini' / any small capable model
+                            'temperature' => 0.3,
+                            'response_format' => ['type' => 'json_object'],
+                            'messages' => [
+                                ['role' => 'system', 'content' => 'You write excellent podcast metadata.'],
+                                ['role' => 'user', 'content' => $prompt],
+                            ],
+                        ])->throw()->json();
+
+                    $json = json_decode($chat['choices'][0]['message']['content'] ?? '{}', true);
+
+                    // Basic guards
+                    if (!is_array($json)) $json = [];
+                    $newTitle   = $json['title'] ?? null;
+                    $newDesc    = $json['description'] ?? null;
+                    $newChaps   = $json['chapters'] ?? null;
+
+                    // 4) Save to the episode (requires ai columns; migration below)
+                    $episode->title       = $newTitle ?: ($episode->title ?: 'Untitled');
+                    if ($newDesc) $episode->description = $newDesc;
+                    if (is_array($newChaps)) $episode->chapters = $newChaps;       // json column
+                    $episode->transcript  = $transcription;                         // long text
+                    $episode->save();
+
+                    return back()->with('success', 'AI enhancement complete — title, description, chapters, and transcript updated.');
+                } catch (\Illuminate\Http\Client\RequestException $e) {
+                    $msg = $e->response?->json('error.message') ?? $e->getMessage();
+                    return back()->withErrors(['ai' => 'OpenAI error: '.$msg]);
+                } catch (\Throwable $e) {
+                    return back()->withErrors(['ai' => 'AI enhancement failed: '.$e->getMessage()]);
+                }
+            }
+
 }

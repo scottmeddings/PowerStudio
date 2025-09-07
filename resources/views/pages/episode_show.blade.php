@@ -92,6 +92,7 @@
               placeholder="Write a great description for this episode…">{{ old('description', $episode->description) }}</textarea>
             @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
           </div>
+  
 
           {{-- More Episode Settings --}}
           <div class="border-top pt-3">

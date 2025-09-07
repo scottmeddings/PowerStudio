@@ -18,6 +18,8 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\EpisodeChapterController;
 use App\Http\Controllers\EpisodeTranscriptController;
 use App\Http\Controllers\DistributionController;
+use App\Http\Controllers\Auth\LocalAuthController;
+
 
 
 /*
@@ -39,6 +41,8 @@ Route::get('/', function () {
 */
 Route::middleware('guest')->group(function () {
     Route::view('/login', 'auth.login')->name('login');
+    Route::get('/login',  [LocalAuthController::class, 'create'])->name('login'); // show form
+    Route::post('/login', [LocalAuthController::class, 'store'])->name('login.attempt'); // handle form
 
     Route::get('/register',  [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
@@ -118,7 +122,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('/distribution/{slug}', [DistributionController::class, 'disconnect'])
             ->name('distribution.disconnect');
     });
-    
+
 
     // Comments
     Route::post('/episodes/{episode}/comments', [CommentController::class, 'store'])
@@ -134,11 +138,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/monetization',  [PageController::class, 'monetization'])->name('monetization');
     Route::get('/settings',      [PageController::class, 'settings'])->name('settings');
 
+
+
     // routes settings
-    Route::middleware('auth')->group(function () {
+ 
     Route::post('/settings/cover',        [ProfileController::class, 'uploadCover'])->name('settings.cover.upload');
     Route::delete('/settings/cover',      [ProfileController::class, 'deleteCover'])->name('settings.cover.delete');
-});
+    Route::patch('/settings/account',      [PageController::class, 'updateAccount'])->name('settings.account');
+    Route::post('/settings/profile-photo', [PageController::class, 'uploadProfilePhoto'])->name('settings.profile-photo');
+    Route::delete('/settings/profile-photo',[PageController::class, 'removeProfilePhoto'])->name('settings.profile-photo.remove');
+    
 
 // EPOSIDES - cover upload/remove, publish/unpublish
     Route::patch('/episodes/{episode}/cover', [EpisodeController::class, 'uploadCover'])
@@ -151,7 +160,8 @@ Route::middleware('auth')->group(function () {
     Route::match(['put', 'patch'], '/episodes/{episode}', [EpisodeController::class, 'update'])
     ->name('episodes.update');
     Route::prefix('episodes/{episode}')->group(function () {
-    // Chapters
+    
+        // Chapters
     Route::get ('/chapters',       [EpisodeChapterController::class, 'index'])->name('episodes.chapters.index');
     Route::post('/chapters/sync',  [EpisodeChapterController::class, 'sync'])->name('episodes.chapters.sync');
     Route::delete('/chapters/{chapter}', [EpisodeChapterController::class, 'destroy'])->name('episodes.chapters.destroy');
@@ -161,7 +171,13 @@ Route::middleware('auth')->group(function () {
     Route::post('/transcript',     [EpisodeTranscriptController::class, 'store'])->name('episodes.transcript.store');
     Route::delete('/transcript',   [EpisodeTranscriptController::class, 'destroy'])->name('episodes.transcript.destroy');
     Route::get ('/transcript/download', [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
-});
+    });
+ 
+
+    Route::post('/episodes/{episode}/ai-enhance', [EpisodeController::class, 'aiEnhance'])
+        ->middleware(['auth'])
+        ->name('episodes.ai.enhance');
+
 
 
 

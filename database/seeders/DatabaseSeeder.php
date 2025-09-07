@@ -10,7 +10,8 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             DemoDataSeeder::class,
-            DownloadSeeder::class, 
+            DownloadSeeder::class,  
+            DistributionDemoSeeder::class,
             PowerTimeSeeder::class,  // include if you want it in the default run
         ]);
     }

@@ -8,16 +8,22 @@
 <style>
   .cover-tile{ border:1px dashed rgba(0,0,0,.12); }
   .muted-hint{ color:#6b7280; font-size:.85rem; }
+  .avatar-wrap{
+    width:108px;height:108px;border-radius:999px;overflow:hidden;
+    display:inline-grid;place-items:center;background:#f1f5f9;border:1px solid rgba(0,0,0,.08);
+  }
+  .avatar-wrap img{ width:100%; height:100%; object-fit:cover; }
 </style>
 @endpush
 
 @section('content')
-
-
 @php($u = auth()->user())
 @php($coverUrl = $u->podcast_cover_url
     ?? $u->cover_url
     ?? ($u->cover_path ? \Storage::url($u->cover_path) : null))
+@php($avatarUrl = method_exists($u, 'getAttribute') && $u->profile_photo_path
+      ? \Storage::url($u->profile_photo_path)
+      : ($u->profile_photo_url ?? null))
 
 {{-- Flash messages --}}
 @if (session('status'))
@@ -37,7 +43,42 @@
   <div class="col-12 col-lg-7">
     <div class="section-card p-4">
       <h5 class="mb-3">Account</h5>
-      <form method="POST" action="{{ route('profile.update') }}" class="needs-validation" novalidate>
+
+      {{-- Profile Photo --}}
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="avatar-wrap">
+          <img src="{{ $avatarUrl ?: 'https://placehold.co/216x216?text=Avatar' }}" alt="Profile photo">
+        </div>
+
+        <div class="flex-grow-1">
+          <form class="d-flex flex-wrap gap-2" method="POST"
+                action="{{ route('settings.profile-photo') }}" enctype="multipart/form-data">
+            @csrf
+            <input type="file" name="photo" accept="image/png,image/jpeg,image/webp"
+                   class="form-control @error('photo') is-invalid @enderror" style="max-width:280px">
+            @error('photo') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+            <button type="submit" class="btn btn-outline-secondary">
+              <i class="bi bi-upload me-1"></i>Upload photo
+            </button>
+          </form>
+
+          @if($avatarUrl)
+            <form method="POST" action="{{ route('settings.profile-photo.remove') }}" class="mt-2">
+              @csrf @method('DELETE')
+              <button class="btn btn-outline-danger btn-sm" type="submit">
+                <i class="bi bi-trash me-1"></i>Remove photo
+              </button>
+            </form>
+          @endif
+
+          <div class="muted-hint mt-2">
+            JPG/PNG/WebP up to 2MB. A square image looks best.
+          </div>
+        </div>
+      </div>
+
+      {{-- Account details --}}
+      <form method="POST" action="{{ route('settings.account') }}" class="needs-validation" novalidate>
         @csrf
         @method('PATCH')
 
@@ -66,7 +107,7 @@
               <button class="btn btn-sm btn-outline-dark">Resend link</button>
             </form>
           </div>
-        @endif
+        @endif>
 
         <button class="btn btn-dark" type="submit">
           <i class="bi bi-save me-1"></i>Save changes
@@ -109,7 +150,7 @@
   {{-- Right rail --}}
   <div class="col-12 col-lg-5">
 
-    {{-- NEW: Podcast Cover Art --}}
+    {{-- Podcast Cover Art --}}
     <div class="section-card p-3 cover-tile text-center">
       <h6 class="mb-2">Podcast Cover Art</h6>
 

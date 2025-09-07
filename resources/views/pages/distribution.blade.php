@@ -52,15 +52,8 @@
   .badge-dot{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:.35rem}
   .bd-ok{background:#16a34a}.bd-wt{background:#9ca3af}
 </style>
+@include('components.stats-boxes', ['stats' => $stats])
 
-@include('components.stats-boxes', [
-  'stats' => [
-    ['label' => 'Yesterday Downloads',   'value' => $yesterday ?? 0, 'color' => 'green'],
-    ['label' => 'Last 7 Days Downloads', 'value' => $last7 ?? 0,     'color' => 'green'],
-    ['label' => 'Last 30 Days Downloads','value'=> $last30 ?? 0,     'color' => 'blue'],
-    ['label' => 'All Time Downloads',    'value' => $allTime ?? 0,   'color' => 'orange'],
-  ]
-])
 
 {{-- RSS feed card --}}
 <div class="section-card p-3 mb-3">

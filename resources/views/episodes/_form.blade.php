@@ -48,7 +48,8 @@
     <div class="row g-3 mt-1">
       <div class="col-md-4">
         <label class="form-label">Status</label>
-        <select id="statusSelect" name="status" class="form-select @error('status') is-invalid @enderror">
+        {{-- IMPORTANT: id must be "statusField" so the XHR script can set it to "draft" --}}
+        <select id="statusField" name="status" class="form-select @error('status') is-invalid @enderror">
           <option value="draft"     {{ $status === 'draft' ? 'selected' : '' }}>Draft</option>
           <option value="published" {{ $status === 'published' ? 'selected' : '' }}>Published</option>
         </select>
@@ -79,13 +80,13 @@
       <h6 class="mb-3">Actions</h6>
 
       <div class="d-grid gap-2">
-        {{-- Save / Update (submits the main form that wraps this partial) --}}
-        <button class="btn btn-blush" type="submit">
+        {{-- Save / Update — MUST be type="button" and id="updateBtn" for XHR/progress --}}
+        <button id="updateBtn" type="button" class="btn btn-blush">
           <i class="bi bi-save me-1"></i>{{ $editing ? 'Save Changes' : 'Create Episode' }}
         </button>
 
-        {{-- Save as draft (forces status=draft, then submits main form) --}}
-        <button id="saveAsDraftBtn" class="btn btn-outline-secondary" type="button">
+        {{-- Save as draft — MUST be type="button" and id="saveDraftBtn" for XHR/progress --}}
+        <button id="saveDraftBtn" type="button" class="btn btn-outline-secondary">
           Save as draft
         </button>
 
@@ -102,14 +103,20 @@
           @endif
         @endif
 
+        {{-- Enhance with AI --}}
+        <form id="aiEnhanceForm" method="POST" action="{{ route('episodes.ai.enhance', $episode) }}" class="mt-2">
+          @csrf
+          <button id="aiEnhanceBtn" type="submit" class="btn btn-outline-blush w-100">
+            <i class="bi bi-stars me-1"></i> Enhance with AI
+          </button>
+        </form>
+
         {{-- Cancel --}}
         <a class="btn btn-outline-secondary" href="{{ route('episodes') }}">Cancel</a>
 
-        {{-- Delete uses external hidden form too (avoid nesting) --}}
+        {{-- Delete (external hidden form) --}}
         @if($editing)
-          <button type="submit"
-                  form="deleteEpisodeForm"
-                  class="btn btn-outline-danger"
+          <button type="submit" form="deleteEpisodeForm" class="btn btn-outline-danger"
                   onclick="return confirm('Delete this episode?');">
             <i class="bi bi-trash me-1"></i>Delete
           </button>
@@ -118,18 +125,3 @@
     </div>
   </div>
 </div>
-
-{{-- tiny helper for "Save as draft" --}}
-<script>
-  (function () {
-    const btn = document.getElementById('saveAsDraftBtn');
-    const status = document.getElementById('statusSelect');
-    if (btn && status) {
-      btn.addEventListener('click', () => {
-        status.value = 'draft';
-        // submit the nearest wrapping form (the main update/create form)
-        btn.closest('form').submit();
-      });
-    }
-  })();
-</script>

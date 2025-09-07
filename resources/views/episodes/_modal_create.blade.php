@@ -1,20 +1,17 @@
 {{-- resources/views/episodes/_modal_create.blade.php --}}
 @push('styles')
 <style>
-  /* Wider modal & comfy spacing */
   #episodeModal .modal-dialog { max-width: 1100px; }
   #episodeModal .form-label { font-weight: 600; }
   #episodeModal .muted-hint { color:#6b7280; font-size:.85rem; }
-
-  /* Simple drop-look box for file input (click to select) */
-  .drop-tile {
-    border: 1px dashed rgba(0,0,0,.25);
-    border-radius: .75rem;
-    padding: 1rem;
-    background: #fafafa;
+  .drop-tile{
+    border:1px dashed rgba(0,0,0,.25);
+    border-radius:.75rem;
+    padding:1rem;
+    background:#fafafa;
   }
-  .drop-tile:hover { background: #f6f6f6; }
-  .drop-tile .title { font-weight: 600; }
+  .drop-tile:hover{ background:#f6f6f6; }
+  .drop-tile .title{ font-weight:600; }
 </style>
 @endpush
 
@@ -23,7 +20,6 @@
     <div class="modal-content">
       <form method="POST" action="{{ route('episodes.store') }}" enctype="multipart/form-data">
         @csrf
-        {{-- lets us auto-reopen on validation errors --}}
         <input type="hidden" name="_show_episode_modal" value="1">
 
         <div class="modal-header">
@@ -34,8 +30,8 @@
         </div>
 
         <div class="modal-body">
-          {{-- Top: Title + Description full width on small screens, split on lg up --}}
           <div class="row g-4">
+            {{-- Left: Title + Description --}}
             <div class="col-lg-7">
               <div class="mb-3">
                 <label class="form-label" for="ep-title">Title</label>
@@ -54,34 +50,32 @@
               </div>
             </div>
 
-            {{-- Right column: Upload + meta --}}
+            {{-- Right: Upload (MP3 only) + meta --}}
             <div class="col-lg-5">
               <div class="drop-tile mb-3">
                 <div class="d-flex align-items-start">
                   <i class="bi bi-music-note-beamed fs-4 me-3"></i>
                   <div>
-                    <div class="title mb-1">Upload Audio</div>
+                    <div class="title mb-1">Upload MP3</div>
                     <div class="muted-hint">
-                      MP3 / M4A / WAV recommended. If you also provide a URL below, the uploaded file will be used.
+                      MP3 only (max 2&nbsp;GB). 
                     </div>
                   </div>
                 </div>
 
                 <div class="mt-3">
-                  <input class="form-control @error('audio') is-invalid @enderror" type="file" name="audio" accept="audio/*">
+                  <input
+                    class="form-control @error('audio') is-invalid @enderror"
+                    type="file"
+                    name="audio"
+                    accept=".mp3,audio/mpeg"
+                    required
+                  >
                   @error('audio') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
                 </div>
               </div>
 
-              <div class="mb-3">
-                <label class="form-label" for="ep-url">Audio URL (optional)</label>
-                <input id="ep-url" name="audio_url" type="url"
-                       placeholder="https://cdn.example.com/episode.mp3"
-                       class="form-control @error('audio_url') is-invalid @enderror"
-                       value="{{ old('audio_url') }}">
-                @error('audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
-              </div>
-
+              {{-- Optional meta --}}
               <div class="row g-3">
                 <div class="col-6">
                   <label class="form-label" for="ep-dur">Duration (sec)</label>

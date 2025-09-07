@@ -65,7 +65,7 @@
     .tile h3{ font-size:.9rem; color:#64748b; margin:0 0 .3rem; }
     .tile .value{ font-weight:700; font-size:1.75rem; }
 
-    /* Compact helpers (used by Episodes, but handy everywhere) */
+    /* Compact helpers */
     .section-card.compact{ padding:.5rem .5rem 0; border-radius:.6rem; }
     .badge-compact{ font-size:.72rem; font-weight:600; padding:.28rem .45rem; }
     .pill-compact{ font-size:.72rem; padding:.25rem .5rem; }
@@ -101,18 +101,16 @@
       box-shadow:0 .25rem .75rem rgba(236,72,153,.35),0 0 0 .2rem rgba(236,72,153,.25);
     }
     i.bi, .bi, svg.bi {
-    font-size: 1rem;       /* keeps icons from ballooning */
-    line-height: 1;
-    position: static;
-    max-width: 1em;
-    max-height: 1em;
+      font-size: 1rem;
+      line-height: 1;
+      position: static;
+      max-width: 1em;
+      max-height: 1em;
     }
-    
 
-    /* Bootstrap caret (dropdown) triangles: keep them tiny */
-    .dropdown-toggle::after {
-    border-width: .3em;    /* default caret size */
-    }
+    /* Bootstrap caret size */
+    .dropdown-toggle::after { border-width: .3em; }
+
     .btn-outline-blush{
       --blush:#ec4899;
       color:var(--blush);
@@ -125,13 +123,17 @@
       border-color:var(--blush);
     }
 
+    /* Avatar helpers */
+    .object-fit-cover{ object-fit:cover; }
+    .avatar-22{ width:22px; height:22px; }
+
     /* Mobile sidebar */
     @media (max-width:992px){
       .app{ grid-template-columns:1fr; grid-template-areas:"topbar" "main"; }
       .sidebar{
         position:fixed; inset:0 auto 0 0; width:var(--sidebar-w);
         transform:translateX(-100%); transition:transform .25s;
-        z-index:1050; /* still below modal/backdrop */
+        z-index:1050;
       }
       .sidebar.show{ transform:translateX(0); }
       .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1049; }
@@ -198,7 +200,7 @@
     <h1 class="h5 mb-0">@yield('page-title', 'Dashboard')</h1>
 
     <div class="d-flex align-items-center gap-2">
-      {{-- New Episode opens global modal (now blush) --}}
+      {{-- New Episode opens global modal --}}
       <a class="btn btn-blush" data-bs-toggle="modal" data-bs-target="#episodeModal">
         <i class="bi bi-plus-lg me-1"></i>New Episode
       </a>
@@ -207,9 +209,20 @@
         <i class="bi bi-life-preserver me-1"></i>Support
       </button>
 
+      @php
+        $user   = auth()->user();
+        $avatar = $user?->avatar_url ?? null;  // accessor on User model
+        
+      @endphp
       <div class="dropdown">
-        <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" type="button">
-          <i class="bi bi-person-circle me-1"></i>{{ auth()->user()->name ?? 'User' }}
+        <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2 dropdown-toggle"
+                data-bs-toggle="dropdown" type="button">
+          @if($avatar)
+            <img src="{{ $avatar }}" alt="Profile" class="rounded-circle object-fit-cover avatar-22">
+          @else
+            <i class="bi bi-person-circle"></i>
+          @endif
+          <span class="d-none d-sm-inline">{{ $user?->name ?? 'User' }}</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
           <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="bi bi-person me-2"></i>Profile</a></li>
