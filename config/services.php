@@ -28,10 +28,13 @@ return [
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect'      => env('GOOGLE_REDIRECT_URI'),
     ],
-    
-    'openai' => [
-    'key' => env('OPENAI_API_KEY'),
+
+   'openai' => [
+    'key'             => env('OPENAI_API_KEY'),
+    'timeout'         => env('OPENAI_TIMEOUT', 600),
+    'connect_timeout' => env('OPENAI_CONNECT_TIMEOUT', 30),
     ],
+
 
     'facebook' => [
     'client_id'     => env('FACEBOOK_CLIENT_ID'),

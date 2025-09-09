@@ -5,188 +5,395 @@
 @section('page-title', 'Edit Episode')
 
 @section('content')
-  {{-- Flash --}}
-  @if (session('success'))
-    <div class="alert alert-success">{{ session('success') }}</div>
-  @endif
+<style>
+  .sticky-side { position: sticky; top: 82px; z-index: 5; }
+  .cover-card  { border: 1px dashed rgba(0,0,0,.12); }
 
-  {{-- Validation --}}
-  @if ($errors->any())
-    <div class="alert alert-danger" role="alert">
-      <div class="fw-semibold mb-2">We found a few issues:</div>
-      <ul class="mb-0">
-        @foreach ($errors->all() as $e)
-          <li>{{ $e }}</li>
-        @endforeach
-      </ul>
-    </div>
-  @endif
+  /* Keep modals above sticky UI/backdrop */
+  .modal, .modal.fade .modal-dialog { z-index: 3001 !important; }
+  .modal-backdrop, .modal-backdrop.show { z-index: 3000 !important; }
+</style>
 
-  <div class="section-card p-4">
-    {{-- MAIN UPDATE FORM (PUT) — DO NOT put another <form> inside the partial --}}
-    <form id="episodeForm"
-          method="POST"
-          action="{{ route('episodes.update', $episode) }}"
-          enctype="multipart/form-data">
-      @csrf
-      @method('PUT')
+@if (session('success'))
+  <div class="alert alert-success">{{ session('success') }}</div>
+@endif
 
-      @include('episodes._form', ['episode' => $episode])
-      {{-- The partial should provide:
-           - hidden <input id="statusField" name="status" ...>
-           - buttons with ids: updateBtn (type="button"), saveDraftBtn (type="button")
-           - optional buttons: publishNowBtn, unpublishBtn, deleteEpisodeBtn, aiEnhanceBtn
-      --}}
-    </form>
+@if ($errors->any())
+  <div class="alert alert-danger" role="alert">
+    <div class="fw-semibold mb-2">We found a few issues:</div>
+    <ul class="mb-0">
+      @foreach ($errors->all() as $e) <li>{{ $e }}</li> @endforeach
+    </ul>
+  </div>
+@endif
 
-    {{-- Helper forms (kept OUTSIDE the main form) --}}
-    <form id="publishForm" method="POST" action="{{ route('episodes.publish', $episode) }}" class="d-none">
-      @csrf @method('PATCH')
-    </form>
+@php
+  $status = old('status', $episode->status ?? 'draft');
+@endphp
 
-    <form id="unpublishForm" method="POST" action="{{ route('episodes.unpublish', $episode) }}" class="d-none">
-      @csrf @method('PATCH')
-    </form>
+<div class="row g-4">
+  {{-- LEFT: main form --}}
+  <div class="col-lg-9">
+    <div class="section-card p-4">
+      <form id="episodeForm" method="POST" action="{{ route('episodes.update', $episode) }}" enctype="multipart/form-data">
+        @csrf
+        @method('PUT')
 
-    <form id="deleteEpisodeForm" method="POST" action="{{ route('episodes.destroy', $episode) }}" class="d-none">
-      @csrf @method('DELETE')
-    </form>
+        {{-- Title --}}
+        <div class="mb-3">
+          <label class="form-label">Title</label>
+          <input name="title" type="text" required
+                 class="form-control @error('title') is-invalid @enderror"
+                 value="{{ old('title', $episode->title) }}">
+          @error('title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+        </div>
 
-    <form id="aiEnhanceForm" method="POST" action="{{ route('episodes.ai.enhance', $episode) }}" class="d-none">
-      @csrf
-    </form>
+        {{-- Description --}}
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea name="description" rows="8"
+                    class="form-control @error('description') is-invalid @enderror">{{ old('description', $episode->description) }}</textarea>
+          @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
+        </div>
 
-    {{-- Upload progress (shown while saving with files) --}}
-    <div id="uploadProgressWrap" class="mt-3 d-none">
-      <div id="uploadProgressLabel" class="small text-secondary mb-1">Preparing…</div>
-      <div class="progress" style="height:8px;">
-        <div id="uploadProgressBar"
-             class="progress-bar bg-success"
-             role="progressbar"
-             style="width:0%"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-      </div>
+        {{-- Audio + URL --}}
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Upload Audio</label>
+            <input type="file" name="audio" accept="audio/*"
+                   class="form-control @error('audio') is-invalid @enderror">
+            @error('audio') <div class="invalid-feedback">{{ $message }}</div> @enderror
+            <small class="text-secondary d-block mt-1">If you also provide a URL, the uploaded file will be used.</small>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Audio URL</label>
+            <input name="audio_url" type="url"
+                   class="form-control @error('audio_url') is-invalid @enderror"
+                   value="{{ old('audio_url', $episode->audio_url) }}"
+                   placeholder="https://cdn.example.com/episode.mp3">
+            @error('audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+          </div>
+        </div>
+
+        {{-- Status / Duration / Publish At --}}
+        <div class="row g-3 mt-1">
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select id="statusField" name="status" class="form-select @error('status') is-invalid @enderror">
+              <option value="draft"     {{ $status === 'draft' ? 'selected' : '' }}>Draft</option>
+              <option value="published" {{ $status === 'published' ? 'selected' : '' }}>Published</option>
+            </select>
+            @error('status') <div class="invalid-feedback">{{ $message }}</div> @enderror
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Duration (sec)</label>
+            <input name="duration_seconds" type="number" min="0"
+                   class="form-control @error('duration_seconds') is-invalid @enderror"
+                   value="{{ old('duration_seconds', $episode->duration_seconds) }}">
+            @error('duration_seconds') <div class="invalid-feedback">{{ $message }}</div> @enderror
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Publish At (optional)</label>
+            <input name="published_at" type="datetime-local"
+                   class="form-control @error('published_at') is-invalid @enderror"
+                   value="{{ old('published_at', optional($episode->published_at)->format('Y-m-d\TH:i')) }}">
+            @error('published_at') <div class="invalid-feedback">{{ $message }}</div> @enderror
+          </div>
+        </div>
+
+        {{-- AI progress (separate from upload) --}}
+        <div id="aiProgressWrap" class="mt-3 d-none">
+          <div class="d-flex justify-content-between small mb-1">
+            <span id="aiProgressText">Preparing…</span>
+            <span id="aiProgressPct" class="text-muted">0%</span>
+          </div>
+          <div class="progress" style="height:8px;">
+            <div id="aiProgressBar"
+                 class="progress-bar"
+                 role="progressbar"
+                 style="width:0%"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          </div>
+        </div>
+
+        {{-- Upload progress (Save / Draft only) --}}
+        <div id="uploadProgressWrap" class="mt-3 d-none">
+          <div id="uploadProgressLabel" class="small text-secondary mb-1">Preparing…</div>
+          <div class="progress" style="height:8px;">
+            <div id="uploadProgressBar" class="progress-bar bg-success"
+                 role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
-  {{-- Optional modals --}}
-  @include('episodes._modal_chapters')
-  @include('episodes._modal_transcript')
-@endsection
+  {{-- RIGHT: sidebar --}}
+  <div class="col-lg-3">
+    <div class="sticky-side">
+      {{-- Cover --}}
+      <div class="section-card p-3 cover-card text-center">
+        <div class="mb-2 fw-semibold">Episode Cover</div>
+        @php $coverUrl = $episode->cover_image_url ?? 'https://placehold.co/480x480?text=Cover'; @endphp
+        <img id="coverPreview" src="{{ $coverUrl }}" alt="Cover" class="img-fluid rounded mb-2">
 
-@push('scripts')
+        <form method="POST" action="{{ route('episodes.cover.upload', $episode) }}" enctype="multipart/form-data" class="d-grid gap-2">
+          @csrf @method('PATCH')
+          <input id="coverInput" type="file" name="cover" accept="image/png,image/jpeg,image/webp" class="form-control">
+          @error('cover') <div class="text-danger small">{{ $message }}</div> @enderror
+          <button class="btn btn-dark btn-sm w-100" type="submit"><i class="bi bi-upload me-1"></i>Upload image</button>
+        </form>
+
+        @if(!empty($episode->cover_path))
+          <form method="POST" action="{{ route('episodes.cover.remove', $episode) }}" class="mt-2">
+            @csrf @method('DELETE')
+            <button class="btn btn-outline-danger btn-sm w-100" type="submit">
+              <i class="bi bi-x-circle me-1"></i>Remove episode cover
+            </button>
+          </form>
+        @endif
+
+        <div class="text-secondary small mt-2">Between 1400 and 2048px square (jpg or png).</div>
+      </div>
+
+      {{-- Actions under cover --}}
+      <div class="section-card p-3 mt-3">
+        <h6 class="mb-3">Actions</h6>
+        <div class="d-grid gap-2">
+          <button id="updateBtn"    type="button" class="btn btn-blush"><i class="bi bi-save me-1"></i>Save Changes</button>
+          <button id="saveDraftBtn" type="button" class="btn btn-outline-secondary">Save as draft</button>
+
+          @if(strtolower($status) !== 'published')
+            <button id="publishNowBtn" type="button" class="btn btn-success"><i class="bi bi-megaphone me-1"></i>Publish now</button>
+          @else
+            <button id="unpublishBtn" type="button" class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Unpublish</button>
+          @endif
+
+          <button id="aiEnhanceBtn" type="button" class="btn btn-outline-blush"><i class="bi bi-stars me-1"></i>Enhance with AI</button>
+
+          <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#chaptersModal">
+            <i class="bi bi-journal-text me-1"></i>Edit chapter markers
+          </button>
+          <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#transcriptModal">
+            <i class="bi bi-text-paragraph me-1"></i>Edit transcript
+          </button>
+
+          <button id="aiCancelBtn" type="button" class="btn btn-outline-secondary d-none">Cancel enhance</button>
+          <a id="navCancelBtn" class="btn btn-outline-secondary" href="{{ route('episodes') }}">Cancel</a>
+
+          <button id="deleteEpisodeBtn" type="button" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{-- Helper forms (outside main form) --}}
+<form id="publishForm"   method="POST" action="{{ route('episodes.publish', $episode) }}"   class="d-none">@csrf @method('PATCH')</form>
+<form id="unpublishForm" method="POST" action="{{ route('episodes.unpublish', $episode) }}" class="d-none">@csrf @method('PATCH')</form>
+<form id="deleteEpisodeForm" method="POST" action="{{ route('episodes.destroy', $episode) }}" class="d-none">@csrf @method('DELETE')</form>
+<form id="aiEnhanceForm"   method="POST" action="{{ route('episodes.ai.enhance', $episode) }}" class="d-none">@csrf</form>
+
+{{-- Modals --}}
+@includeIf('episodes._modal_chapters')
+@includeIf('episodes._modal_transcript')
+
+{{-- Ensure modals render on top (append to body) --}}
 <script>
-(function () {
-  // ---- Elements ----
-  const form         = document.getElementById('episodeForm');
-  const statusField  = document.getElementById('statusField');     // provided by the partial
-  const btnSave      = document.getElementById('updateBtn');       // type="button"
-  const btnDraft     = document.getElementById('saveDraftBtn');    // type="button"
-  const publishBtn   = document.getElementById('publishNowBtn');
-  const unpublishBtn = document.getElementById('unpublishBtn');
-  const deleteBtn    = document.getElementById('deleteEpisodeBtn');
-  const aiBtn        = document.getElementById('aiEnhanceBtn');
+  ['chaptersModal','transcriptModal'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('show.bs.modal', function(){
+      if(el.parentElement!==document.body) document.body.appendChild(el);
+    });
+    if(el.parentElement!==document.body) document.body.appendChild(el);
+  });
+</script>
 
-  const wrap  = document.getElementById('uploadProgressWrap');
-  const bar   = document.getElementById('uploadProgressBar');
-  const label = document.getElementById('uploadProgressLabel');
+{{-- Upload progress for Save / Draft --}}
+<script>
+(function(){
+  const form   = document.getElementById('episodeForm');
+  const status = document.getElementById('statusField');
+  const save   = document.getElementById('updateBtn');
+  const draft  = document.getElementById('saveDraftBtn');
 
-  // ---- Helpers ----
-  function fmtBytesPerSec(bps) {
-    const u = ['B/s','KB/s','MB/s','GB/s'];
-    let i = 0, v = bps;
-    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + ' ' + u[i];
+  const wrap   = document.getElementById('uploadProgressWrap');
+  const bar    = document.getElementById('uploadProgressBar');
+  const label  = document.getElementById('uploadProgressLabel');
+
+  function fmtBps(b){const u=['B/s','KB/s','MB/s','GB/s'];let i=0,v=b;while(v>=1024&&i<u.length-1){v/=1024;i++;}return (v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2))+' '+u[i];}
+
+  function submitWithProgress(){
+    if(!('upload' in new XMLHttpRequest())){ form.submit(); return; }
+    const fd=new FormData(form); if(!fd.has('_method')) fd.append('_method','PUT');
+    [save,draft].forEach(b=>b&&(b.disabled=true));
+    wrap.classList.remove('d-none'); bar.style.width='0%'; bar.setAttribute('aria-valuenow','0'); label.textContent='Starting upload…';
+
+    const xhr=new XMLHttpRequest(); const started=Date.now();
+    xhr.upload.onprogress=(e)=>{ if(!e.lengthComputable) return;
+      const pct=Math.round((e.loaded/e.total)*100);
+      const speed=e.loaded/((Date.now()-started)/1000);
+      bar.style.width=pct+'%'; bar.setAttribute('aria-valuenow',String(pct));
+      label.textContent=`Uploading… ${pct}% · ${fmtBps(speed)}`;
+    };
+    xhr.onload=()=>{ if([200,201,204,302].includes(xhr.status)){ bar.style.width='100%'; label.textContent='Processing…'; window.location.reload(); } else onError(); };
+    xhr.onerror=onError;
+    function onError(){ bar.classList.remove('bg-success'); bar.classList.add('bg-danger'); label.textContent='Upload failed. Please try again.'; [save,draft].forEach(b=>b&&(b.disabled=false)); }
+    xhr.open('POST', form.action, true); xhr.setRequestHeader('X-Requested-With','XMLHttpRequest'); xhr.send(fd);
   }
 
-  // Main XHR submit with progress
-  function submitWithProgress() {
-    if (!form) return;
+  save?.addEventListener('click', (e)=>{ e.preventDefault(); submitWithProgress(); });
+  draft?.addEventListener('click',(e)=>{ e.preventDefault(); if(status) status.value='draft'; submitWithProgress(); });
+})();
+</script>
 
-    // Fallback if upload progress not supported
-    if (!('upload' in new XMLHttpRequest())) { form.submit(); return; }
-
-    const fd = new FormData(form); // includes _token and any files
-    if (!fd.has('_method')) fd.append('_method','PUT'); // ensure method spoofing
-
-    [btnSave, btnDraft].forEach(b => b && (b.disabled = true));
-
-    wrap.classList.remove('d-none');
-    bar.style.width = '0%';
-    bar.setAttribute('aria-valuenow', '0');
-    bar.classList.remove('bg-danger');
-    bar.classList.add('bg-success');
-    label.textContent = 'Starting upload…';
-    wrap.scrollIntoView({ behavior:'smooth', block:'center' });
-
-    const xhr = new XMLHttpRequest();
-    const startedAt = Date.now();
-
-    xhr.upload.onprogress = (e) => {
-      if (!e.lengthComputable) return;
-      const pct  = Math.round((e.loaded / e.total) * 100);
-      const secs = (Date.now() - startedAt) / 1000;
-      const speed = e.loaded / secs;
-      const remaining = e.total - e.loaded;
-      const eta = speed ? Math.max(0, remaining / speed) : 0;
-
-      bar.style.width = pct + '%';
-      bar.setAttribute('aria-valuenow', String(pct));
-      label.textContent = `Uploading… ${pct}% · ${fmtBytesPerSec(speed)} · ~${Math.ceil(eta)}s left`;
-    };
-
-    xhr.onload = () => {
-      if ([200,201,204,302].includes(xhr.status)) {
-        bar.style.width = '100%';
-        bar.setAttribute('aria-valuenow', '100');
-        label.textContent = 'Processing…';
-        window.location.reload();
-      } else { onError(); }
-    };
-
-    xhr.onerror = onError;
-    function onError(){
-      bar.classList.remove('bg-success');
-      bar.classList.add('bg-danger');
-      label.textContent = 'Upload failed. Please try again.';
-      [btnSave, btnDraft].forEach(b => b && (b.disabled = false));
-    }
-
-    xhr.open('POST', form.action, true);
-    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-    xhr.send(fd);
-  }
-
-  // ---- Button bindings (Save / Draft use XHR with progress) ----
-  btnSave?.addEventListener('click', (e) => {
-    e.preventDefault();
-    submitWithProgress();
-  });
-  btnDraft?.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (statusField) statusField.value = 'draft';
-    submitWithProgress();
-  });
-
-  // ---- Publish / Unpublish / Delete (simple posts) ----
-  publishBtn?.addEventListener('click', () => {
-    document.getElementById('publishForm')?.submit();
-  });
-  unpublishBtn?.addEventListener('click', () => {
-    document.getElementById('unpublishForm')?.submit();
-  });
-  deleteBtn?.addEventListener('click', () => {
-    if (confirm('Delete this episode permanently? This cannot be undone.')) {
+{{-- Publish / Unpublish / Delete + cover preview --}}
+<script>
+  document.getElementById('publishNowBtn')?.addEventListener('click', () =>
+    document.getElementById('publishForm')?.submit()
+  );
+  document.getElementById('unpublishBtn')?.addEventListener('click', () =>
+    document.getElementById('unpublishForm')?.submit()
+  );
+  document.getElementById('deleteEpisodeBtn')?.addEventListener('click', () => {
+    if (confirm('Delete this episode permanently?')) {
       document.getElementById('deleteEpisodeForm')?.submit();
     }
   });
 
-  // ---- Enhance with AI ----
-  aiBtn?.addEventListener('click', () => {
-    aiBtn.disabled = true;
-    aiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enhancing…';
-    document.getElementById('aiEnhanceForm')?.submit();
+  document.getElementById('coverInput')?.addEventListener('change', (e)=>{
+    const f=e.target.files && e.target.files[0];
+    if(f) document.getElementById('coverPreview').src = URL.createObjectURL(f);
   });
+</script>
+
+{{-- AI progress (start + poll) --}}
+<script>
+(function () {
+  const aiBtn       = document.getElementById('aiEnhanceBtn');
+  const aiCancelBtn = document.getElementById('aiCancelBtn');
+  const navCancel   = document.getElementById('navCancelBtn');
+
+  const wrap  = document.getElementById('aiProgressWrap');
+  const bar   = document.getElementById('aiProgressBar');
+  const pctEl = document.getElementById('aiProgressPct');
+  const text  = document.getElementById('aiProgressText');
+
+  const startUrl  = @json(route('episodes.ai.enhance',  $episode));
+  const pollUrl   = @json(route('episodes.ai.progress', $episode));
+  const cancelUrl = @json(route('episodes.ai.cancel',   $episode));
+
+  const csrf = document.querySelector('meta[name=csrf-token]')?.content
+            || document.querySelector('#aiEnhanceForm input[name=_token]')?.value;
+
+  function show(p, msg, danger=false) {
+    wrap.classList.remove('d-none');
+    const v = Math.max(0, Math.min(100, p|0));
+    bar.style.width = v + '%';
+    bar.setAttribute('aria-valuenow', String(v));
+    bar.classList.toggle('bg-danger', !!danger);
+    bar.classList.toggle('bg-success', !danger);
+    if (pctEl) pctEl.textContent = v + '%';
+    text.textContent = msg || '';
+  }
+
+  function toggleCancel(running) {
+    aiCancelBtn?.classList.toggle('d-none', !running);
+    navCancel?.classList.toggle('d-none',  running);
+    if (aiBtn) aiBtn.disabled = running;
+  }
+
+  let timer = null, terminalSeen = 0;
+
+  async function pollOnce() {
+    try {
+      const bust = (pollUrl.includes('?') ? '&' : '?') + 'ts=' + Date.now(); // cache-bust
+      const res = await fetch(pollUrl + bust, {
+        cache: 'no-store',
+        headers: { 'X-Requested-With':'XMLHttpRequest' }
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+
+      const p = Math.max(0, Math.min(100, +d.progress || 0));
+      show(p, d.message || d.status || 'Working…');
+
+      const terminal = !!d.terminal || ['done','failed','canceled'].includes(String(d.status));
+      if (terminal) {
+        terminalSeen++;
+        if (terminalSeen >= 2) {
+          clearInterval(timer);
+          toggleCancel(false);
+
+          if (String(d.status) === 'done' || p >= 100) {
+            show(100, d.message || 'Finished!');
+            setTimeout(() => location.reload(), 700);
+          } else if (String(d.status) === 'failed') {
+            show(p, d.message || 'Failed.', true);
+            bar.classList.add('bg-danger');
+          } else if (String(d.status) === 'canceled') {
+            show(p, d.message || 'Canceled.', true);
+            bar.classList.add('bg-warning');
+          }
+        }
+      } else {
+        terminalSeen = 0;
+      }
+    } catch (_) {}
+  }
+
+  // Start AI
+  aiBtn?.addEventListener('click', async () => {
+    toggleCancel(true);
+    aiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enhancing…';
+    show(1, 'Queuing AI job…');
+
+    try {
+      const res = await fetch(startUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-TOKEN': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin'
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      timer = setInterval(pollOnce, 1200);
+      pollOnce();
+    } catch (err) {
+      toggleCancel(false);
+      aiBtn.innerHTML = '<i class="bi bi-stars me-1"></i>Enhance with AI';
+      show(0, 'Failed to start AI: ' + (err?.message || err), true);
+    }
+  });
+
+  // Cancel AI
+  aiCancelBtn?.addEventListener('click', async () => {
+    aiCancelBtn.disabled = true;
+    aiCancelBtn.textContent = 'Canceling…';
+    try {
+      await fetch(cancelUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-TOKEN': csrf,
+          'X-Requested-With':'XMLHttpRequest',
+          'Accept':'application/json'
+        },
+        credentials: 'same-origin'
+      });
+      // Next poll tick will reflect "canceled"
+    } catch (_) {} finally {
+      aiCancelBtn.disabled = false;
+      aiCancelBtn.textContent = 'Cancel enhance';
+    }
+  });
+
+  // Resume on page load
+  timer = setInterval(pollOnce, 1500);
+  pollOnce();
 })();
 </script>
-@endpush
+@endsection

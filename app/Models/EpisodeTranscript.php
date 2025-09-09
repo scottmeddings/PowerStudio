@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class EpisodeTranscript extends Model
 {
-    protected $fillable = ['episode_id','format','body','storage_path','duration_ms'];
-    public function episode(){ return $this->belongsTo(Episode::class); }
+    protected $fillable = ['episode_id','format','body','duration_ms','storage_path'];
+
+    public function episode() { return $this->belongsTo(Episode::class); }
+
+  
 }

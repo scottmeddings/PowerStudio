@@ -19,6 +19,10 @@ use App\Http\Controllers\EpisodeChapterController;
 use App\Http\Controllers\EpisodeTranscriptController;
 use App\Http\Controllers\DistributionController;
 use App\Http\Controllers\Auth\LocalAuthController;
+use App\Http\Controllers\EpisodeAiController;
+use App\Http\Controllers\PodcastFeedController;
+
+
 
 
 
@@ -54,6 +58,9 @@ Route::middleware('guest')->group(function () {
     Route::get('/auth/{provider}/callback', [SocialController::class, 'callback'])
         ->whereIn('provider', ['google','microsoft','facebook'])
         ->name('social.callback');
+    
+    Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
+    ->name('feed.podcast');
 });
 
 /*
@@ -85,6 +92,19 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Podcast RSS feed (public)
+    
+
+    // Podcasting 2.0 helpers (optional but recommended)
+    Route::get('/episodes/{episode}/chapters.json', [EpisodeChaptersJsonController::class, 'show'])
+        ->name('episodes.chapters.json');
+    /*
+    You already have transcript download in your EpisodeTranscriptController.
+    Ensure you have a public download route that returns the stored transcript file:
+    Route::get('/episodes/{episode}/transcript', [EpisodeTranscriptController::class, 'download'])
+        ->name('episodes.transcript.download');
+    */
+
     // Episodes (CRUD + show)
     Route::get('/episodes',                 [PageController::class, 'episodes'])->name('episodes');         // list
     Route::get('/episodes/create',          [EpisodeController::class, 'create'])->name('episodes.create');
@@ -101,6 +121,10 @@ Route::middleware('auth')->group(function () {
 
     Route::delete('/episodes/{episode}', [EpisodeController::class, 'destroy'])
     ->middleware('can:delete,episode')->name('episodes.destroy');
+    
+    Route::post('/episodes/{episode}/ai/enhance', [EpisodeAiController::class, 'enhance'])
+    ->middleware(['auth'])
+    ->name('episodes.ai.enhance');
 
     // Podcast apps (distribution) - upsert/destroy
     Route::middleware('auth')->group(function () {
@@ -159,6 +183,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
     Route::match(['put', 'patch'], '/episodes/{episode}', [EpisodeController::class, 'update'])
     ->name('episodes.update');
+
+    
     Route::prefix('episodes/{episode}')->group(function () {
     
         // Chapters
@@ -173,13 +199,23 @@ Route::middleware('auth')->group(function () {
     Route::get ('/transcript/download', [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
     });
  
+    Route::middleware('auth')->group(function () {
+        Route::post('/episodes/{episode}/ai/enhance',  [EpisodeAIController::class, 'enhance'])->name('episodes.ai.enhance');
+        Route::post('/episodes/{episode}/ai/cancel',  [EpisodeAIController::class, 'cancel'])->name('episodes.ai.cancel');
+        Route::get ('/episodes/{episode}/ai/progress', [EpisodeAIController::class, 'progress'])->name('episodes.ai.progress');
+    });     
 
-    Route::post('/episodes/{episode}/ai-enhance', [EpisodeController::class, 'aiEnhance'])
-        ->middleware(['auth'])
-        ->name('episodes.ai.enhance');
-
-
-
+   // ai test screen
+    Route::get('/episodes/{episode}/ai/debug', function (\App\Models\Episode $episode) {
+        $id = $episode->id;
+        return response()->json([
+            'env_queue' => config('queue.default'),
+            'db_status' => $episode->only(['ai_status','ai_progress','ai_message']),
+            'cache'     => Cache::get("ai:$id:progress"),
+            'pid'       => Cache::get("ai:$id:pid"),
+            'queueSize' => method_exists(\Queue::class, 'size') ? \Queue::size('default') : null,
+        ]);
+    })->middleware('auth');
 
     // Test screen
     Route::get('/test/totals', [TestController::class, 'totals'])->name('test.totals');

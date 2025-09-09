@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
+use App\Models\EpisodeChapter;
+use App\Models\EpisodeTranscript;
 
 class Episode extends Model
 {
@@ -20,14 +22,16 @@ class Episode extends Model
         'status',
         'published_at',
         'cover_path',
-        'cover_url', // optional if you ever persist a direct URL
+        'cover_url',
+         'ai_status', 
+         'ai_progress', 
+         'ai_message',
     ];
 
     protected $casts = [
-        'published_at'      => 'datetime',
-        'duration_seconds'  => 'integer',
-        // Do NOT cast 'chapters' to array if you use the hasMany relationship below.
-        // 'chapters'        => 'array',
+        'published_at'     => 'datetime',
+        'duration_seconds' => 'integer',
+        // Do NOT cast 'chapters' to array when using the hasMany relation.
     ];
 
     /* Relationships */
@@ -35,6 +39,7 @@ class Episode extends Model
     {
         return $this->belongsTo(User::class);
     }
+    
 
     public function comments()
     {
@@ -48,8 +53,11 @@ class Episode extends Model
 
     public function transcript()
     {
-        return $this->hasOne(EpisodeTranscript::class);
+        return $this->hasOne(\App\Models\EpisodeTranscript::class);
     }
+   
+
+    // always load transcript with the model
 
     /* Accessors */
     public function getCoverImageUrlAttribute(): ?string
@@ -62,7 +70,6 @@ class Episode extends Model
             return Storage::url($this->cover_path);
         }
 
-        // Fallback to user's cover (requires relationship or lazy load)
         if ($this->relationLoaded('user') || $this->user()->exists()) {
             return $this->user->cover_image_url ?? null;
         }

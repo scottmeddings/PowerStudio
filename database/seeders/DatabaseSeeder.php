@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
             DownloadSeeder::class,  
             DistributionDemoSeeder::class,
             PowerTimeSeeder::class,  // include if you want it in the default run
+            EpisodeWithTranscriptSeeder::class,
         ]);
     }
 }

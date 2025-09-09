@@ -63,13 +63,13 @@
                 value="{{ old('audio_url', $episode->audio_url) }}"
                 placeholder="https://cdn.example.com/path/episode.mp3">
               @error('audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
-              <div class="muted-hint mt-1">Use a direct URL to your MP3 (or wire an uploader later).</div>
+              <div class="muted-hint mt-1">Use a direct URL to your MP3.</div>
             </div>
           </div>
 
           {{-- Title --}}
           <div class="mb-3">
-            <label class="label-sm mb-1" for="title">Title</label>
+            <label class="label-sm mb-1" for="title">Podcast Name</label>
             <input
               id="title"
               type="text"
@@ -116,7 +116,7 @@
                 </div>
 
                 <div class="col-sm-6">
-                  <label class="label-sm mb-1" for="published_at">Publish date (optional)</label>
+                  <label class="label-sm mb-1" for="published_at">Publish date</label>
                   <input
                     id="published_at"
                     type="datetime-local"
