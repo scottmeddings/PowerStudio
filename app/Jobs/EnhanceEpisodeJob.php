@@ -192,22 +192,38 @@ class EnhanceEpisodeJob implements ShouldQueue
             }
         }
 
-        // 4) Full URL to this app’s /storage
+        // 4) Full URL pointing to this app’s /storage → always try to map to disk
         if (filter_var($input, FILTER_VALIDATE_URL)) {
-            $appUrl  = rtrim((string) config('app.url'), '/');
-            $appHost = parse_url($appUrl, PHP_URL_HOST);
-            $host    = parse_url($input,  PHP_URL_HOST);
-            $path    = parse_url($input,  PHP_URL_PATH) ?: '';
-            if ($appHost && $host && strcasecmp($appHost, $host) === 0 && str_starts_with($path, '/storage/')) {
-                $publicPath = public_path(ltrim($path, '/'));
-                if (is_file($publicPath)) return $publicPath;
-
+            $path = parse_url($input, PHP_URL_PATH) ?: '';
+            if (str_starts_with($path, '/storage/')) {
+                // try public/storage/... first
+                $publicPath = public_path(ltrim($path, '/'));   // public/storage/...
+                if (is_file($publicPath)) {
+                    \Log::info('resolveLocalAudio: mapped URL to public file', ['url' => $input, 'path' => $publicPath]);
+                    return $publicPath;
+                }
+                // then try the public disk
                 $relative = ltrim(\Illuminate\Support\Str::after($path, '/storage/'), '/');
                 if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
-                    return \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
-                }
-            }
+                    $real = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+                    \Log::info('resolveLocalAudio: mapped URL to storage disk file', ['url' => $input, 'path' => $real]);
+                    return $real;
         }
+
+        \Log::warning('resolveLocalAudio: /storage URL did not map to file', ['url' => $input]);
+    } else {
+        // (optional) keep your original same-host check here if you want
+        $appUrl  = rtrim((string) config('app.url'), '/');
+        $appHost = parse_url($appUrl, PHP_URL_HOST);
+        $host    = parse_url($input,  PHP_URL_HOST);
+        $localish = static fn($h) => in_array($h, ['localhost','127.0.0.1','::1'], true);
+
+        if ($appHost && $host && ($appHost === $host || ($localish($appHost) && $localish($host)))) {
+            // even if path isn’t /storage, you could add special handling here if needed
+        }
+    }
+}
+
 
         // 5) Remote URL → stream download with progress + cancel
         if (!filter_var($input, FILTER_VALIDATE_URL)) {

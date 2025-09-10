@@ -1,60 +1,42 @@
-<?php echo '<?xml version="1.0" encoding="UTF-8"?>' . PHP_EOL; ?>
+<?php echo '<?xml version="1.0" encoding="UTF-8"?>'; ?>
+
 <rss version="2.0"
-     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
      xmlns:atom="http://www.w3.org/2005/Atom"
-     xmlns:podcast="https://podcastindex.org/namespace/1.0">
-  <channel>
-    <title>{{ $config['title'] }}</title>
-    <link>{{ $config['site_url'] }}</link>
-    <atom:link href="{{ $self }}" rel="self" type="application/rss+xml"/>
-    <language>{{ $config['language'] }}</language>
-    <copyright>{{ date('Y') }} {{ $config['owner_name'] }}</copyright>
-    <description><![CDATA[{{ $config['description'] }}]]></description>
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<channel>
+  <title>{{ e($site['title']) }}</title>
+  <link>{{ $site['link'] }}</link>
+  <language>{{ $site['lang'] }}</language>
+  <description>{{ e($site['desc']) }}</description>
+  <atom:link href="{{ $site['link'] }}/feed/podcast.xml" rel="self" type="application/rss+xml" />
 
-    <itunes:author><![CDATA[{{ $config['author'] }}]]></itunes:author>
-    <itunes:summary><![CDATA[{{ $config['description'] }}]]></itunes:summary>
-    <itunes:owner>
-      <itunes:name>{{ $config['owner_name'] }}</itunes:name>
-      <itunes:email>{{ $config['owner_email'] }}</itunes:email>
-    </itunes:owner>
-    <itunes:explicit>{{ $config['explicit'] }}</itunes:explicit>
-    <itunes:type>episodic</itunes:type>
-    <itunes:category text="{{ $config['category'] }}"/>
-    <itunes:image href="{{ $config['cover_url'] }}"/>
+@foreach ($episodes as $ep)
+  @php
+    $appUrl  = rtrim(config('app.url'), '/');
+    $itemUrl = $appUrl . route('episodes.show', $ep, false);
+    $pubDate = optional($ep->published_at ?? $ep->created_at)?->toRfc2822String();
 
-    <lastBuildDate>{{ $lastBuildDate }}</lastBuildDate>
+    $audioUrl = $ep->audio_url;
+    if (!$audioUrl && !empty($ep->audio_path)) {
+        $audioUrl = \Storage::disk('public')->url($ep->audio_path);
+    }
+    if ($audioUrl && !preg_match('#^https?://#i', $audioUrl)) {
+        $audioUrl = $appUrl . '/' . ltrim($audioUrl, '/');
+    }
 
-    @foreach($items as $item)
-      <item>
-        <title><![CDATA[{{ $item['title'] }}]]></title>
-        <description><![CDATA[{{ $item['description'] }}]]></description>
-        <link>{{ $item['guid'] }}</link>
-        <guid isPermaLink="false">{{ $item['guid'] }}</guid>
-        @if($item['pubDate'])<pubDate>{{ $item['pubDate'] }}</pubDate>@endif
+    $itunesDuration = $ep->duration_seconds ? gmdate('H:i:s', (int) $ep->duration_seconds) : null;
+  @endphp
 
-        <enclosure url="{{ $item['enclosure']['url'] }}"
-                   length="{{ $item['enclosure']['length'] }}"
-                   type="{{ $item['enclosure']['type'] }}" />
+  <item>
+    <title>{{ e($ep->title) }}</title>
+    <guid isPermaLink="false">{{ $ep->id }}</guid>
+    <link>{{ $itemUrl }}</link>
+    @if($pubDate)<pubDate>{{ $pubDate }}</pubDate>@endif
+    <description><![CDATA[{!! nl2br(e($ep->description)) !!}]]></description>
+    @if($audioUrl)<enclosure url="{{ $audioUrl }}" type="audio/mpeg" />@endif
+    @if($itunesDuration)<itunes:duration>{{ $itunesDuration }}</itunes:duration>@endif
+  </item>
+@endforeach
 
-        @if(!empty($item['duration'])) <itunes:duration>{{ $item['duration'] }}</itunes:duration> @endif
-        <itunes:explicit>{{ $config['explicit'] }}</itunes:explicit>
-
-        {{-- Episode-level image if present --}}
-        @if(!empty($item['cover']))
-          <itunes:image href="{{ $item['cover'] }}"/>
-        @endif
-
-        {{-- Podcasting 2.0: transcript --}}
-        @if($item['transcript'])
-          <podcast:transcript url="{{ $item['transcript']['url'] }}"
-                              type="{{ $item['transcript']['type'] }}" />
-        @endif
-
-        {{-- Podcasting 2.0: chapters (JSON) --}}
-        @if($item['chapters_url'])
-          <podcast:chapters url="{{ $item['chapters_url'] }}" type="application/json+chapters"/>
-        @endif
-      </item>
-    @endforeach
-  </channel>
+</channel>
 </rss>

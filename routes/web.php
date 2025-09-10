@@ -37,7 +37,9 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 })->name('home');
-
+ Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
+    ->name('feed.podcast')
+    ->withoutMiddleware('auth'); // safety guard in case this line ever gets moved
 /*
 |--------------------------------------------------------------------------
 | Guest routes
@@ -59,8 +61,7 @@ Route::middleware('guest')->group(function () {
         ->whereIn('provider', ['google','microsoft','facebook'])
         ->name('social.callback');
     
-    Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
-    ->name('feed.podcast');
+  
 });
 
 /*

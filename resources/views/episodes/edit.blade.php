@@ -8,7 +8,6 @@
 <style>
   .sticky-side { position: sticky; top: 82px; z-index: 5; }
   .cover-card  { border: 1px dashed rgba(0,0,0,.12); }
-
   /* Keep modals above sticky UI/backdrop */
   .modal, .modal.fade .modal-dialog { z-index: 3001 !important; }
   .modal-backdrop, .modal-backdrop.show { z-index: 3000 !important; }
@@ -79,6 +78,7 @@
         <div class="row g-3 mt-1">
           <div class="col-md-4">
             <label class="form-label">Status</label>
+            {{-- IMPORTANT: id must be "statusField" so scripts can set it to "draft" --}}
             <select id="statusField" name="status" class="form-select @error('status') is-invalid @enderror">
               <option value="draft"     {{ $status === 'draft' ? 'selected' : '' }}>Draft</option>
               <option value="published" {{ $status === 'published' ? 'selected' : '' }}>Published</option>
@@ -101,22 +101,7 @@
           </div>
         </div>
 
-        {{-- AI progress (separate from upload) --}}
-        <div id="aiProgressWrap" class="mt-3 d-none">
-          <div class="d-flex justify-content-between small mb-1">
-            <span id="aiProgressText">Preparing…</span>
-            <span id="aiProgressPct" class="text-muted">0%</span>
-          </div>
-          <div class="progress" style="height:8px;">
-            <div id="aiProgressBar"
-                 class="progress-bar"
-                 role="progressbar"
-                 style="width:0%"
-                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-          </div>
-        </div>
-
-        {{-- Upload progress (Save / Draft only) --}}
+        {{-- Upload progress (save/save-draft) --}}
         <div id="uploadProgressWrap" class="mt-3 d-none">
           <div id="uploadProgressLabel" class="small text-secondary mb-1">Preparing…</div>
           <div class="progress" style="height:8px;">
@@ -178,9 +163,15 @@
             <i class="bi bi-text-paragraph me-1"></i>Edit transcript
           </button>
 
-          <button id="aiCancelBtn" type="button" class="btn btn-outline-secondary d-none">Cancel enhance</button>
-          <a id="navCancelBtn" class="btn btn-outline-secondary" href="{{ route('episodes') }}">Cancel</a>
+          {{-- Actions (replace the old Cancel line with the two below) --}}
+          <button id="aiCancelBtn" type="button" class="btn btn-outline-secondary d-none">
+            Cancel enhance
+          </button>
+          <a id="navCancelBtn" class="btn btn-outline-secondary" href="{{ route('episodes') }}">
+              Cancel
+          </a>
 
+          
           <button id="deleteEpisodeBtn" type="button" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete</button>
         </div>
       </div>
@@ -198,6 +189,89 @@
 @includeIf('episodes._modal_chapters')
 @includeIf('episodes._modal_transcript')
 
+{{-- AI progress (start + poll) --}}
+<script>
+
+(function () {
+  const aiBtn    = document.getElementById('aiEnhanceBtn');
+  const wrap     = document.getElementById('uploadProgressWrap');
+  const bar      = document.getElementById('uploadProgressBar');
+  const label    = document.getElementById('uploadProgressLabel');
+  const startUrl = @json(route('episodes.ai.enhance', $episode));
+  const pollUrl  = @json(route('episodes.ai.progress', $episode));
+  const cancelUrl= @json(route('episodes.ai.cancel',   $episode)); // <-- add this
+
+
+  function setBar(pct, text, danger=false) {
+    wrap.classList.remove('d-none');
+    bar.style.width = (pct||0) + '%';
+    bar.setAttribute('aria-valuenow', pct||0);
+    bar.classList.toggle('bg-danger', !!danger);
+    bar.classList.toggle('bg-success', !danger);
+    label.textContent = text || '';
+    wrap.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+
+  let pollTimer = null;
+  async function poll() {
+    try {
+      const res = await fetch(pollUrl, { credentials: 'same-origin' });
+      const j = await res.json();
+      const pct = Math.max(0, Math.min(100, j.progress ?? 0));
+      setBar(pct, j.message || 'Working…');
+
+      if (j.status === 'done') {
+        setBar(100, 'Finished!');
+        clearInterval(pollTimer);
+        setTimeout(() => window.location.reload(), 800);
+      } else if (j.status === 'failed') {
+        clearInterval(pollTimer);
+        setBar(0, j.message || 'AI failed.', true);
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = '<i class="bi bi-stars me-1"></i>Enhance with AI';
+      }
+    } catch (e) {
+      // swallow transient poll errors
+    }
+  }
+
+  aiBtn?.addEventListener('click', async () => {
+    aiBtn.disabled = true;
+    aiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enhancing…';
+
+    setBar(1, 'Queuing AI job…');
+
+    const token = document.querySelector('#aiEnhanceForm input[name=_token]')?.value
+               || document.querySelector('meta[name=csrf-token]')?.content;
+
+    try {
+      const res = await fetch(startUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-TOKEN': token,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin'
+      });
+
+      if (![200,202].includes(res.status)) {
+        const body = await res.text();
+        throw new Error(body || ('HTTP ' + res.status));
+      }
+
+      // begin polling
+      pollTimer = setInterval(poll, 1500);
+      poll(); // immediate first poll
+    } catch (err) {
+      setBar(0, 'Failed to start AI: ' + (err?.message || err), true);
+      aiBtn.disabled = false;
+      aiBtn.innerHTML = '<i class="bi bi-stars me-1"></i>Enhance with AI';
+    }
+  });
+})();
+</script>
+
 {{-- Ensure modals render on top (append to body) --}}
 <script>
   ['chaptersModal','transcriptModal'].forEach(function(id){
@@ -210,14 +284,16 @@
   });
 </script>
 
-{{-- Upload progress for Save / Draft --}}
+{{-- XHR upload progress for Save / Draft --}}
 <script>
 (function(){
   const form   = document.getElementById('episodeForm');
   const status = document.getElementById('statusField');
   const save   = document.getElementById('updateBtn');
   const draft  = document.getElementById('saveDraftBtn');
-
+  const aiBtn       = document.getElementById('aiEnhanceBtn');
+  const aiCancelBtn = document.getElementById('aiCancelBtn');
+  const navCancel   = document.getElementById('navCancelBtn');
   const wrap   = document.getElementById('uploadProgressWrap');
   const bar    = document.getElementById('uploadProgressBar');
   const label  = document.getElementById('uploadProgressLabel');
@@ -248,8 +324,10 @@
 })();
 </script>
 
-{{-- Publish / Unpublish / Delete + cover preview --}}
+{{-- Publish / Unpublish / Delete (NO AI handler here) + cover preview --}}
 <script>
+
+  
   document.getElementById('publishNowBtn')?.addEventListener('click', () =>
     document.getElementById('publishForm')?.submit()
   );
@@ -266,134 +344,5 @@
     const f=e.target.files && e.target.files[0];
     if(f) document.getElementById('coverPreview').src = URL.createObjectURL(f);
   });
-</script>
-
-{{-- AI progress (start + poll) --}}
-<script>
-(function () {
-  const aiBtn       = document.getElementById('aiEnhanceBtn');
-  const aiCancelBtn = document.getElementById('aiCancelBtn');
-  const navCancel   = document.getElementById('navCancelBtn');
-
-  const wrap  = document.getElementById('aiProgressWrap');
-  const bar   = document.getElementById('aiProgressBar');
-  const pctEl = document.getElementById('aiProgressPct');
-  const text  = document.getElementById('aiProgressText');
-
-  const startUrl  = @json(route('episodes.ai.enhance',  $episode));
-  const pollUrl   = @json(route('episodes.ai.progress', $episode));
-  const cancelUrl = @json(route('episodes.ai.cancel',   $episode));
-
-  const csrf = document.querySelector('meta[name=csrf-token]')?.content
-            || document.querySelector('#aiEnhanceForm input[name=_token]')?.value;
-
-  function show(p, msg, danger=false) {
-    wrap.classList.remove('d-none');
-    const v = Math.max(0, Math.min(100, p|0));
-    bar.style.width = v + '%';
-    bar.setAttribute('aria-valuenow', String(v));
-    bar.classList.toggle('bg-danger', !!danger);
-    bar.classList.toggle('bg-success', !danger);
-    if (pctEl) pctEl.textContent = v + '%';
-    text.textContent = msg || '';
-  }
-
-  function toggleCancel(running) {
-    aiCancelBtn?.classList.toggle('d-none', !running);
-    navCancel?.classList.toggle('d-none',  running);
-    if (aiBtn) aiBtn.disabled = running;
-  }
-
-  let timer = null, terminalSeen = 0;
-
-  async function pollOnce() {
-    try {
-      const bust = (pollUrl.includes('?') ? '&' : '?') + 'ts=' + Date.now(); // cache-bust
-      const res = await fetch(pollUrl + bust, {
-        cache: 'no-store',
-        headers: { 'X-Requested-With':'XMLHttpRequest' }
-      });
-      if (!res.ok) return;
-      const d = await res.json();
-
-      const p = Math.max(0, Math.min(100, +d.progress || 0));
-      show(p, d.message || d.status || 'Working…');
-
-      const terminal = !!d.terminal || ['done','failed','canceled'].includes(String(d.status));
-      if (terminal) {
-        terminalSeen++;
-        if (terminalSeen >= 2) {
-          clearInterval(timer);
-          toggleCancel(false);
-
-          if (String(d.status) === 'done' || p >= 100) {
-            show(100, d.message || 'Finished!');
-            setTimeout(() => location.reload(), 700);
-          } else if (String(d.status) === 'failed') {
-            show(p, d.message || 'Failed.', true);
-            bar.classList.add('bg-danger');
-          } else if (String(d.status) === 'canceled') {
-            show(p, d.message || 'Canceled.', true);
-            bar.classList.add('bg-warning');
-          }
-        }
-      } else {
-        terminalSeen = 0;
-      }
-    } catch (_) {}
-  }
-
-  // Start AI
-  aiBtn?.addEventListener('click', async () => {
-    toggleCancel(true);
-    aiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enhancing…';
-    show(1, 'Queuing AI job…');
-
-    try {
-      const res = await fetch(startUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRF-TOKEN': csrf,
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'application/json'
-        },
-        credentials: 'same-origin'
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-
-      timer = setInterval(pollOnce, 1200);
-      pollOnce();
-    } catch (err) {
-      toggleCancel(false);
-      aiBtn.innerHTML = '<i class="bi bi-stars me-1"></i>Enhance with AI';
-      show(0, 'Failed to start AI: ' + (err?.message || err), true);
-    }
-  });
-
-  // Cancel AI
-  aiCancelBtn?.addEventListener('click', async () => {
-    aiCancelBtn.disabled = true;
-    aiCancelBtn.textContent = 'Canceling…';
-    try {
-      await fetch(cancelUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRF-TOKEN': csrf,
-          'X-Requested-With':'XMLHttpRequest',
-          'Accept':'application/json'
-        },
-        credentials: 'same-origin'
-      });
-      // Next poll tick will reflect "canceled"
-    } catch (_) {} finally {
-      aiCancelBtn.disabled = false;
-      aiCancelBtn.textContent = 'Cancel enhance';
-    }
-  });
-
-  // Resume on page load
-  timer = setInterval(pollOnce, 1500);
-  pollOnce();
-})();
 </script>
 @endsection
