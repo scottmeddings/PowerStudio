@@ -14,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Schema;            // ✅ correct import
 use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Storage;          // ✅ for saving processed audio
 use Throwable;
 
 class EnhanceEpisodeJob implements ShouldQueue
@@ -48,12 +49,15 @@ class EnhanceEpisodeJob implements ShouldQueue
         try {
             $this->tick(5,  'downloading',  'Downloading audio…');
             $this->abortIfCanceled();
-            
+
             $local = $this->resolveLocalAudioFromEpisode($episode);
 
             $this->tick(15, 'downsampling', 'Optimizing audio…');
             $this->abortIfCanceled();
             $downsampled = $this->downsample($local); // stores ffmpeg PID in cache during run
+
+            // ✅ Persist processed audio and update episode URL/path (before transcription)
+            $this->persistProcessedAudio($episode, $downsampled, $local);
 
             $this->tick(60, 'transcribing', 'Transcribing with Whisper…');
             $this->abortIfCanceled();
@@ -128,8 +132,17 @@ class EnhanceEpisodeJob implements ShouldQueue
             throw $e;
         } finally {
             Cache::forget($this->pidKey());
-            if ($downsampled && is_file($downsampled)) @unlink($downsampled);
-            if ($local && is_file($local)) @unlink($local);
+
+            // ✅ Only delete temp files (avoid deleting real /public files)
+            $isTmp = static function (?string $p): bool {
+                if (!$p) return false;
+                $tmp = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                $rp  = realpath($p) ?: $p;
+                return str_starts_with($rp, $tmp);
+            };
+
+            if ($downsampled && is_file($downsampled) && $isTmp($downsampled)) @unlink($downsampled);
+            if ($local && is_file($local) && $isTmp($local)) @unlink($local);
         }
     }
 
@@ -138,7 +151,7 @@ class EnhanceEpisodeJob implements ShouldQueue
     {
         // 1) Prefer path on public disk
         if (!empty($episode->audio_path)) {
-            $p = \Illuminate\Support\Facades\Storage::disk('public')->path($episode->audio_path);
+            $p = Storage::disk('public')->path($episode->audio_path);
             if (is_file($p)) {
                 \Log::info('resolveLocalAudioFromEpisode: using disk path', ['path' => $p]);
                 return $p;
@@ -186,121 +199,118 @@ class EnhanceEpisodeJob implements ShouldQueue
     }
 
     /* ---------------------- IO helpers ---------------------- */
-private function resolveLocalAudio(string $input): string
-{
-    if (!$input) {
-        throw new \RuntimeException('No audio URL/path provided.');
-    }
-
-    // 1) Already a real filesystem path?
-    if (is_file($input)) {
-        return $input;
-    }
-
-    // 2) /storage/... (public symlink) → real path(s)
-    if (str_starts_with($input, '/storage/')) {
-        $publicPath = public_path(ltrim($input, '/')); // public/storage/...
-        if (is_file($publicPath)) return $publicPath;
-
-        $relative = ltrim(\Illuminate\Support\Str::after($input, '/storage/'), '/');
-        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
-            return \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+    private function resolveLocalAudio(string $input): string
+    {
+        if (!$input) {
+            throw new \RuntimeException('No audio URL/path provided.');
         }
 
-        \Log::warning('resolveLocalAudio: /storage path not found', ['input' => $input]);
-        throw new \RuntimeException('Audio path not found: '.$input);
-    }
-
-    // 3) Relative path on the public disk?
-    if (!preg_match('#^https?://#i', $input) && !str_starts_with($input, DIRECTORY_SEPARATOR)) {
-        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($input)) {
-            return \Illuminate\Support\Facades\Storage::disk('public')->path($input);
+        // 1) Already a real filesystem path?
+        if (is_file($input)) {
+            return $input;
         }
-    }
 
-    // 4) Full URL → try mapping if it’s a /storage URL on this host
-    if (filter_var($input, FILTER_VALIDATE_URL)) {
-        $path = parse_url($input, PHP_URL_PATH) ?: '';
+        // 2) /storage/... (public symlink) → real path(s)
+        if (str_starts_with($input, '/storage/')) {
+            $publicPath = public_path(ltrim($input, '/')); // public/storage/...
+            if (is_file($publicPath)) return $publicPath;
 
-        // Map http(s)://<host>/storage/... to disk; DO NOT fetch over HTTP
-        if (str_starts_with($path, '/storage/')) {
-            $publicPath = public_path(ltrim($path, '/'));
-            if (is_file($publicPath)) {
-                \Log::info('resolveLocalAudio: mapped URL to public file', ['url' => $input, 'path' => $publicPath]);
-                return $publicPath;
-            }
-            $relative = ltrim(\Illuminate\Support\Str::after($path, '/storage/'), '/');
-            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
-                $real = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
-                \Log::info('resolveLocalAudio: mapped URL to storage disk file', ['url' => $input, 'path' => $real]);
-                return $real;
+            $relative = ltrim(Str::after($input, '/storage/'), '/');
+            if (Storage::disk('public')->exists($relative)) {
+                return Storage::disk('public')->path($relative);
             }
 
-            \Log::warning('resolveLocalAudio: /storage URL did not map to file', ['url' => $input]);
+            \Log::warning('resolveLocalAudio: /storage path not found', ['input' => $input]);
             throw new \RuntimeException('Audio path not found: '.$input);
         }
 
-        // For any other remote URL, actually download to temp (non-localhost)
-        $host = parse_url($input, PHP_URL_HOST);
-        $localish = static fn($h) => in_array($h, ['localhost','127.0.0.1','::1'], true);
-        if ($localish($host)) {
-            // Don’t try to HTTP fetch from localhost in a worker
-            throw new \RuntimeException('Localhost URL not reachable from worker: '.$input);
+        // 3) Relative path on the public disk?
+        if (!preg_match('#^https?://#i', $input) && !str_starts_with($input, DIRECTORY_SEPARATOR)) {
+            if (Storage::disk('public')->exists($input)) {
+                return Storage::disk('public')->path($input);
+            }
         }
 
-        $tmp = sys_get_temp_dir() . '/ep_' . \Illuminate\Support\Str::uuid() . '.mp3';
-        $lastTick = 0.0;
+        // 4) Full URL → try mapping if it’s a /storage URL on this host
+        if (filter_var($input, FILTER_VALIDATE_URL)) {
+            $path = parse_url($input, PHP_URL_PATH) ?: '';
 
-        try {
-            \Illuminate\Support\Facades\Http::withOptions([
-                    'sink'     => $tmp,
-                    'progress' => function ($dlTotal, $dlNow) use (&$lastTick) {
-                        $now = microtime(true);
-                        if (($now - $lastTick) < 0.75) return;
-                        $lastTick = $now;
+            // Map http(s)://<host>/storage/... to disk; DO NOT fetch over HTTP
+            if (str_starts_with($path, '/storage/')) {
+                $publicPath = public_path(ltrim($path, '/'));
+                if (is_file($publicPath)) {
+                    \Log::info('resolveLocalAudio: mapped URL to public file', ['url' => $input, 'path' => $publicPath]);
+                    return $publicPath;
+                }
+                $relative = ltrim(Str::after($path, '/storage/'), '/');
+                if (Storage::disk('public')->exists($relative)) {
+                    $real = Storage::disk('public')->path($relative);
+                    \Log::info('resolveLocalAudio: mapped URL to storage disk file', ['url' => $input, 'path' => $real]);
+                    return $real;
+                }
 
-                        $pct = 5;
-                        if ($dlTotal > 0) {
-                            $t   = max(0, min(1, $dlNow / $dlTotal));
-                            $pct = (int) round(5 + 10 * $t);
-                        }
+                \Log::warning('resolveLocalAudio: /storage URL did not map to file', ['url' => $input]);
+                throw new \RuntimeException('Audio path not found: '.$input);
+            }
 
-                        $fmt = function ($b) {
-                            $u = ['B','KB','MB','GB']; $i = 0;
-                            while ($b >= 1024 && $i < 3) { $b /= 1024; $i++; }
-                            return ($b >= 100 ? number_format($b, 0)
-                                              : ($b >= 10 ? number_format($b, 1)
-                                                          : number_format($b, 2))) . ' ' . $u[$i];
-                        };
+            // For any other remote URL, actually download to temp (non-localhost)
+            $host = parse_url($input, PHP_URL_HOST);
+            $localish = static fn($h) => in_array($h, ['localhost','127.0.0.1','::1'], true);
+            if ($localish($host)) {
+                // Don’t try to HTTP fetch from localhost in a worker
+                throw new \RuntimeException('Localhost URL not reachable from worker: '.$input);
+            }
 
-                        $msg = 'Downloading audio… ' . $fmt((float) $dlNow);
-                        if ($dlTotal > 0) { $msg .= ' / ' . $fmt((float) $dlTotal); }
+            $tmp = sys_get_temp_dir() . '/ep_' . Str::uuid() . '.mp3';
+            $lastTick = 0.0;
 
-                        $this->tick($pct, 'downloading', $msg);
-                        if ($this->isCanceled()) throw new \RuntimeException('Canceled by user');
-                    },
-                    'allow_redirects' => true,
-                ])
-                ->connectTimeout(60)
-                ->timeout(900)
-                ->retry(2, 5000)
-                ->get($input)
-                ->throw();
-        } catch (\Throwable $e) {
-            @is_file($tmp) && @unlink($tmp);
-            throw new \RuntimeException('Failed to download audio (network or URL issue).');
+            try {
+                Http::withOptions([
+                        'sink'     => $tmp,
+                        'progress' => function ($dlTotal, $dlNow) use (&$lastTick) {
+                            $now = microtime(true);
+                            if (($now - $lastTick) < 0.75) return;
+                            $lastTick = $now;
+
+                            $pct = 5;
+                            if ($dlTotal > 0) {
+                                $t   = max(0, min(1, $dlNow / $dlTotal));
+                                $pct = (int) round(5 + 10 * $t);
+                            }
+
+                            $fmt = function ($b) {
+                                $u = ['B','KB','MB','GB']; $i = 0;
+                                while ($b >= 1024 && $i < 3) { $b /= 1024; $i++; }
+                                return ($b >= 100 ? number_format($b, 0)
+                                                  : ($b >= 10 ? number_format($b, 1)
+                                                              : number_format($b, 2))) . ' ' . $u[$i];
+                            };
+
+                            $msg = 'Downloading audio… ' . $fmt((float) $dlNow);
+                            if ($dlTotal > 0) { $msg .= ' / ' . $fmt((float) $dlTotal); }
+
+                            $this->tick($pct, 'downloading', $msg);
+                            if ($this->isCanceled()) throw new \RuntimeException('Canceled by user');
+                        },
+                        'allow_redirects' => true,
+                    ])
+                    ->connectTimeout(60)
+                    ->timeout(900)
+                    ->retry(2, 5000)
+                    ->get($input)
+                    ->throw();
+            } catch (\Throwable $e) {
+                @is_file($tmp) && @unlink($tmp);
+                throw new \RuntimeException('Failed to download audio (network or URL issue).');
+            }
+
+            if (!is_file($tmp)) throw new \RuntimeException('Unable to download audio file.');
+            return $tmp;
         }
 
-        if (!is_file($tmp)) throw new \RuntimeException('Unable to download audio file.');
-        return $tmp;
+        // 5) Unknown input
+        throw new \RuntimeException('Audio path not found: '.$input);
     }
-
-    // 5) Unknown input
-    throw new \RuntimeException('Audio path not found: '.$input);
-}
-
-   
-
 
     /**
      * Downsample to mono 16kHz ~64kbps using ffmpeg if available. Falls back to original on failure.
@@ -401,13 +411,83 @@ private function resolveLocalAudio(string $input): string
     }
 
     /**
+     * Persist a processed audio file to the public disk and update episode fields.
+     * If $processed === $original, we assume no new file was produced and skip.
+     */
+    private function persistProcessedAudio(Episode $episode, string $processed, string $original): void
+{
+    $rpProcessed = realpath($processed) ?: $processed;
+    $rpOriginal  = realpath($original)  ?: $original;
+
+    // If downsample failed or just returned the original file, skip persisting.
+    if (!is_file($rpProcessed) || $rpProcessed === $rpOriginal) {
+        \Log::info('persistProcessedAudio: no new file to persist', [
+            'episode_id' => $episode->id,
+            'processed'  => $rpProcessed,
+            'original'   => $rpOriginal,
+        ]);
+        return;
+    }
+
+    // Store under public disk
+    $rel = 'episodes/'.$episode->id.'/enhanced_'.Str::uuid().'.mp3';
+
+    $in = @fopen($rpProcessed, 'rb');
+    if ($in === false) {
+        throw new \RuntimeException('Unable to open processed audio for saving.');
+    }
+
+    try {
+        Storage::disk('public')->put($rel, $in, [
+            'visibility' => 'public',
+            'mimetype'   => 'audio/mpeg',
+        ]);
+    } finally {
+        @fclose($in);
+    }
+
+    // Build a URL that respects the configured disk
+    $url = Storage::disk('public')->url($rel); // usually /storage/...
+
+    // 🔒 Update the DB atomically to avoid stale model overwrites later
+    $affected = Episode::whereKey($episode->id)->update([
+        'audio_path' => $rel,
+        'audio_url'  => $url,
+        'updated_at' => now(), // in case timestamps are relied on elsewhere
+    ]);
+
+    // Keep in-memory model in sync for any subsequent saves in this job
+    $episode->forceFill([
+        'audio_path' => $rel,
+        'audio_url'  => $url,
+    ])->syncOriginal(); // marks attributes as clean so later save() won't revert them
+
+    // Or, if you prefer to re-query from DB:
+    // $episode->refresh();
+
+    \Log::info('Processed audio persisted', [
+        'episode_id' => $episode->id,
+        'audio_path' => $rel,
+        'audio_url'  => $url,
+        'affected'   => $affected,
+    ]);
+
+    if ($affected !== 1) {
+        \Log::warning('persistProcessedAudio: DB update did not affect 1 row', [
+            'episode_id' => $episode->id,
+            'affected'   => $affected,
+        ]);
+    }
+}
+
+
+    /**
      * Call OpenAI Whisper with generous timeouts to avoid cURL 28 on large files.
      */
     private function transcribeWithOpenAI(string $localPath): array
     {
         $key = $this->requireOpenAIKey();
 
-    
         $fh = fopen($localPath, 'rb');
         if (!$fh) throw new \RuntimeException('Unable to open audio file for transcription.');
 

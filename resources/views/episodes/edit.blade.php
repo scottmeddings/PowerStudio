@@ -65,12 +65,20 @@
             <small class="text-secondary d-block mt-1">If you also provide a URL, the uploaded file will be used.</small>
           </div>
           <div class="col-md-6">
+           @php
+              /** @var \App\Models\Episode $episode */
+              // Only use old() if there are errors (i.e., we just failed validation)
+              $audioUrl = $errors->any()
+                  ? old('audio_url', $episode->audio_url)
+                  : ($episode->audio_url ?? '');
+            @endphp
+
             <label class="form-label">Audio URL</label>
             <input name="audio_url" type="url"
-                   class="form-control @error('audio_url') is-invalid @enderror"
-                   value="{{ old('audio_url', $episode->audio_url) }}"
-                   placeholder="https://cdn.example.com/episode.mp3">
+                  class="form-control @error('audio_url') is-invalid @enderror"
+                  value="{{ $audioUrl }}">
             @error('audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+
           </div>
         </div>
 
@@ -191,7 +199,7 @@
 
 {{-- AI progress (start + poll) --}}
 <script>
-
+  
 (function () {
   const aiBtn    = document.getElementById('aiEnhanceBtn');
   const wrap     = document.getElementById('uploadProgressWrap');
