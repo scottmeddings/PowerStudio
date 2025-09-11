@@ -48,7 +48,8 @@ class EnhanceEpisodeJob implements ShouldQueue
         try {
             $this->tick(5,  'downloading',  'Downloading audio…');
             $this->abortIfCanceled();
-            $local = $this->resolveLocalAudio($episode->audio_url);
+            
+            $local = $this->resolveLocalAudioFromEpisode($episode);
 
             $this->tick(15, 'downsampling', 'Optimizing audio…');
             $this->abortIfCanceled();
@@ -133,6 +134,25 @@ class EnhanceEpisodeJob implements ShouldQueue
     }
 
     /* ---------------------- Progress / Cancel helpers ---------------------- */
+    private function resolveLocalAudioFromEpisode(Episode $episode): string
+    {
+        // 1) Prefer path on public disk
+        if (!empty($episode->audio_path)) {
+            $p = \Illuminate\Support\Facades\Storage::disk('public')->path($episode->audio_path);
+            if (is_file($p)) {
+                \Log::info('resolveLocalAudioFromEpisode: using disk path', ['path' => $p]);
+                return $p;
+            }
+            \Log::warning('resolveLocalAudioFromEpisode: audio_path missing on disk', ['path' => $p]);
+        }
+
+        // 2) Fallback to URL mapping (no HTTP)
+        if (!empty($episode->audio_url)) {
+            return $this->resolveLocalAudio($episode->audio_url);
+        }
+
+        throw new \RuntimeException('Episode has no audio_path or audio_url.');
+    }
 
     private function tick(int $pct, string $status, string $msg): void
     {
@@ -166,68 +186,66 @@ class EnhanceEpisodeJob implements ShouldQueue
     }
 
     /* ---------------------- IO helpers ---------------------- */
+private function resolveLocalAudio(string $input): string
+{
+    if (!$input) {
+        throw new \RuntimeException('No audio URL/path provided.');
+    }
 
-    private function resolveLocalAudio(string $input): string
-    {
-        if (!$input) throw new \RuntimeException('No audio URL/path provided.');
+    // 1) Already a real filesystem path?
+    if (is_file($input)) {
+        return $input;
+    }
 
-        // 1) Already a real filesystem path
-        if (is_file($input)) return $input;
+    // 2) /storage/... (public symlink) → real path(s)
+    if (str_starts_with($input, '/storage/')) {
+        $publicPath = public_path(ltrim($input, '/')); // public/storage/...
+        if (is_file($publicPath)) return $publicPath;
 
-        // 2) /storage/... (public disk symlink) → real path
-        if (str_starts_with($input, '/storage/')) {
-            $publicPath = public_path(ltrim($input, '/'));
-            if (is_file($publicPath)) return $publicPath;
-
-            $relative = ltrim(\Illuminate\Support\Str::after($input, '/storage/'), '/');
-            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
-                return \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
-            }
+        $relative = ltrim(\Illuminate\Support\Str::after($input, '/storage/'), '/');
+        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
+            return \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
         }
 
-        // 3) Relative path on the public disk
-        if (!preg_match('#^https?://#i', $input) && !str_starts_with($input, DIRECTORY_SEPARATOR)) {
-            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($input)) {
-                return \Illuminate\Support\Facades\Storage::disk('public')->path($input);
-            }
-        }
+        \Log::warning('resolveLocalAudio: /storage path not found', ['input' => $input]);
+        throw new \RuntimeException('Audio path not found: '.$input);
+    }
 
-        // 4) Full URL pointing to this app’s /storage → always try to map to disk
-        if (filter_var($input, FILTER_VALIDATE_URL)) {
-            $path = parse_url($input, PHP_URL_PATH) ?: '';
-            if (str_starts_with($path, '/storage/')) {
-                // try public/storage/... first
-                $publicPath = public_path(ltrim($path, '/'));   // public/storage/...
-                if (is_file($publicPath)) {
-                    \Log::info('resolveLocalAudio: mapped URL to public file', ['url' => $input, 'path' => $publicPath]);
-                    return $publicPath;
-                }
-                // then try the public disk
-                $relative = ltrim(\Illuminate\Support\Str::after($path, '/storage/'), '/');
-                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
-                    $real = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
-                    \Log::info('resolveLocalAudio: mapped URL to storage disk file', ['url' => $input, 'path' => $real]);
-                    return $real;
-        }
-
-        \Log::warning('resolveLocalAudio: /storage URL did not map to file', ['url' => $input]);
-    } else {
-        // (optional) keep your original same-host check here if you want
-        $appUrl  = rtrim((string) config('app.url'), '/');
-        $appHost = parse_url($appUrl, PHP_URL_HOST);
-        $host    = parse_url($input,  PHP_URL_HOST);
-        $localish = static fn($h) => in_array($h, ['localhost','127.0.0.1','::1'], true);
-
-        if ($appHost && $host && ($appHost === $host || ($localish($appHost) && $localish($host)))) {
-            // even if path isn’t /storage, you could add special handling here if needed
+    // 3) Relative path on the public disk?
+    if (!preg_match('#^https?://#i', $input) && !str_starts_with($input, DIRECTORY_SEPARATOR)) {
+        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($input)) {
+            return \Illuminate\Support\Facades\Storage::disk('public')->path($input);
         }
     }
-}
 
+    // 4) Full URL → try mapping if it’s a /storage URL on this host
+    if (filter_var($input, FILTER_VALIDATE_URL)) {
+        $path = parse_url($input, PHP_URL_PATH) ?: '';
 
-        // 5) Remote URL → stream download with progress + cancel
-        if (!filter_var($input, FILTER_VALIDATE_URL)) {
-            throw new \RuntimeException('Audio path not found: ' . $input);
+        // Map http(s)://<host>/storage/... to disk; DO NOT fetch over HTTP
+        if (str_starts_with($path, '/storage/')) {
+            $publicPath = public_path(ltrim($path, '/'));
+            if (is_file($publicPath)) {
+                \Log::info('resolveLocalAudio: mapped URL to public file', ['url' => $input, 'path' => $publicPath]);
+                return $publicPath;
+            }
+            $relative = ltrim(\Illuminate\Support\Str::after($path, '/storage/'), '/');
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relative)) {
+                $real = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+                \Log::info('resolveLocalAudio: mapped URL to storage disk file', ['url' => $input, 'path' => $real]);
+                return $real;
+            }
+
+            \Log::warning('resolveLocalAudio: /storage URL did not map to file', ['url' => $input]);
+            throw new \RuntimeException('Audio path not found: '.$input);
+        }
+
+        // For any other remote URL, actually download to temp (non-localhost)
+        $host = parse_url($input, PHP_URL_HOST);
+        $localish = static fn($h) => in_array($h, ['localhost','127.0.0.1','::1'], true);
+        if ($localish($host)) {
+            // Don’t try to HTTP fetch from localhost in a worker
+            throw new \RuntimeException('Localhost URL not reachable from worker: '.$input);
         }
 
         $tmp = sys_get_temp_dir() . '/ep_' . \Illuminate\Support\Str::uuid() . '.mp3';
@@ -276,6 +294,13 @@ class EnhanceEpisodeJob implements ShouldQueue
         if (!is_file($tmp)) throw new \RuntimeException('Unable to download audio file.');
         return $tmp;
     }
+
+    // 5) Unknown input
+    throw new \RuntimeException('Audio path not found: '.$input);
+}
+
+   
+
 
     /**
      * Downsample to mono 16kHz ~64kbps using ffmpeg if available. Falls back to original on failure.

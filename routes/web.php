@@ -21,6 +21,8 @@ use App\Http\Controllers\DistributionController;
 use App\Http\Controllers\Auth\LocalAuthController;
 use App\Http\Controllers\EpisodeAiController;
 use App\Http\Controllers\PodcastFeedController;
+use App\Http\Controllers\FeedController;
+
 
 
 
@@ -37,10 +39,12 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 })->name('home');
- Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
+Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
     ->name('feed.podcast')
     ->withoutMiddleware('auth'); // safety guard in case this line ever gets moved
-/*
+Route::get('/feed.xml', [FeedController::class, 'podcast'])
+    ->name('feed.podcast');
+    /*
 |--------------------------------------------------------------------------
 | Guest routes
 |--------------------------------------------------------------------------

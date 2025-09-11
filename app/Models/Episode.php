@@ -51,10 +51,10 @@ class Episode extends Model
         return $this->hasMany(EpisodeChapter::class)->orderBy('sort');
     }
 
-    public function transcript()
-    {
-        return $this->hasOne(\App\Models\EpisodeTranscript::class);
-    }
+public function transcript()
+{
+    return $this->hasOne(\App\Models\EpisodeTranscript::class);
+}
    
 
     // always load transcript with the model

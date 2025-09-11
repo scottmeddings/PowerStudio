@@ -18,6 +18,7 @@
           } catch (\Throwable $e) { /* ignore */ }
       }
   }
+
   // Prefer old('text') only if it exists in session (e.g., validation error)
   $prefill = old('text', null);
   if ($prefill === null) $prefill = $body;
@@ -34,16 +35,17 @@
       </div>
 
       <div class="modal-body">
-        @if($has)
-          <div class="d-flex justify-content-between small text-muted mb-2">
-            <span>Format: {{ strtoupper($tr->format ?? 'TXT') }}</span>
-            @if(!empty($tr?->duration_ms))
-              <span>Duration: {{ gmdate('H:i:s', (int) ($tr->duration_ms/1000)) }}</span>
-            @endif
-          </div>
-        @else
-          <div class="alert alert-info py-2 mb-2">No transcript saved for this episode yet.</div>
-        @endif
+        {{-- Reactive banner/meta (initial state from server, JS keeps them in sync) --}}
+        <div id="trEmptyAlert" class="alert alert-info py-2 mb-2 {{ $has ? 'd-none' : '' }}">
+          No transcript saved for this episode yet.
+        </div>
+
+        <div id="trMeta" class="d-flex justify-content-between small text-muted mb-2 {{ $has ? '' : 'd-none' }}">
+          <span>Format: {{ strtoupper($tr->format ?? 'TXT') }}</span>
+          @if(!empty($tr?->duration_ms))
+            <span>Duration: {{ gmdate('H:i:s', (int) ($tr->duration_ms/1000)) }}</span>
+          @endif
+        </div>
 
         <textarea
           id="trText"
@@ -66,7 +68,9 @@
         <div class="me-auto d-flex align-items-center gap-2">
           <a id="downloadTranscript"
              class="btn btn-outline-secondary btn-sm {{ $has ? '' : 'disabled' }}"
-             href="{{ $has ? route('episodes.transcript.download', $episode) : '#' }}">Download</a>
+             href="{{ $has ? route('episodes.transcript.download', $episode) : '#' }}">
+            Download
+          </a>
 
           <form id="deleteTranscriptForm" method="POST"
                 action="{{ route('episodes.transcript.destroy', $episode) }}">
@@ -94,17 +98,34 @@
 @push('scripts')
 <script>
 (function(){
-  const modal   = document.getElementById('transcriptModal');
+  const modal    = document.getElementById('transcriptModal');
   if (!modal) return;
 
-  const box     = modal.querySelector('#trText');
-  const fetchUrl= box?.dataset.fetchUrl;
+  const box      = modal.querySelector('#trText');
+  const fetchUrl = box?.dataset.fetchUrl;
 
-  // Try to fetch transcript when the modal opens and inject into the textarea.
+  const alertEl  = modal.querySelector('#trEmptyAlert');
+  const metaEl   = modal.querySelector('#trMeta');
+  const dlBtn    = modal.querySelector('#downloadTranscript');
+  const delBtn   = modal.querySelector('#deleteTranscript');
+
+  function reflect() {
+    const has = (box.value || '').trim().length > 0;
+    alertEl?.classList.toggle('d-none', has);
+    metaEl?.classList.toggle('d-none', !has);
+    dlBtn?.classList.toggle('disabled', !has);
+    if (delBtn) delBtn.disabled = !has;
+  }
+
+  // Keep UI in sync while user types/pastes
+  box?.addEventListener('input', reflect);
+
+  // Make sure state is correct whenever modal becomes visible
+  modal.addEventListener('shown.bs.modal', reflect);
+
+  // Fetch from endpoint if empty on open (keeps your original behavior)
   modal.addEventListener('show.bs.modal', async () => {
     if (!box || !fetchUrl) return;
-
-    // If already filled (server prefill), don’t refetch unless empty.
     if ((box.value || '').trim()) return;
 
     try {
@@ -119,30 +140,30 @@
 
       let text = '';
       const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+
       if (ct.includes('application/json')) {
         const j = await res.json();
-        // Accept common shapes: {body: "..."} or {data:{body:"..."}}
+        // Accept common shapes: { ok, body }, or { data:{ body } }
         text = (j && (j.body || (j.data && j.data.body))) || '';
       } else {
-        text = await res.text();
-        // If the endpoint returns the entire JSON as text, try to parse
+        // Fallback: plain text or JSON-as-text
+        let raw = await res.text();
         try {
-          const j = JSON.parse(text);
-          text = (j && (j.body || (j.data && j.data.body))) || text;
-        } catch(_) {}
+          const j = JSON.parse(raw);
+          text = (j && (j.body || (j.data && j.data.body))) || raw;
+        } catch(_) { text = raw; }
       }
 
-      // Normalize to UTF-8-ish display in the textarea
-      // (browsers already expect UTF-8; just ensure it's a string)
       if (typeof text !== 'string') text = String(text ?? '');
-
       box.value = text;
-    } catch (e) {
-      // Leave whatever is there; no hard failure
-      // console.debug('Transcript fetch failed', e);
+      reflect();
+    } catch (_) {
+      // leave prefill as-is
     }
   });
 
+  // Initial state (if modal is already open when this script runs)
+  reflect();
 })();
 </script>
 @endpush

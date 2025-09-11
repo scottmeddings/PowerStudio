@@ -117,9 +117,7 @@
 
             {{-- Actions --}}
             <td class="actions text-end">
-              <a href="{{ route('episodes.show', $ep) }}#comments" class="btn btn-primary btn-xs">
-                <i class="bi bi-eye me-1"></i><span class="btn-label">View</span>
-              </a>
+             
 
               @can('update', $ep)
                 @if(strtolower($ep->status ?? 'draft') !== 'published')
