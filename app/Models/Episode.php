@@ -40,7 +40,40 @@ class Episode extends Model
         return $this->belongsTo(User::class);
     }
     
+    public function scopePublishedWithAudio($q)
+    {
+        return $q->where('status', 'published')
+                 ->where(function($q){
+                     $q->whereNotNull('audio_url')->orWhereNotNull('audio_path');
+                 });
+    }
 
+    // Always returns a usable URL (CDN if set, else storage/public URL, else raw path if already absolute)
+    public function getPlayableUrlAttribute(): ?string
+    {
+        if ($this->audio_url) return $this->audio_url;
+        if (!$this->audio_path) return null;
+        if (Str::startsWith($this->audio_path, ['http://','https://','//'])) return $this->audio_path;
+        return Storage::disk('public')->url($this->audio_path); // adjust disk if needed
+    }
+
+    public function getCoverUrlAttribute(): string
+    {
+        if (!empty($this->cover_path)) {
+            // change disk if your covers live on a different disk
+            return Storage::disk('public')->url($this->cover_path);
+        }
+        if (!empty($this->image_path)) {
+            return Storage::disk('public')->url($this->image_path);
+        }
+        if (!empty($this->image_url)) {
+            return Str::startsWith($this->image_url, ['http://','https://','//','data:'])
+                ? $this->image_url
+                : asset(ltrim($this->image_url, '/'));
+        }
+        return asset('images/podcast-cover.jpg');
+    }
+    
     public function comments()
     {
         return $this->hasMany(Comment::class)->latest();

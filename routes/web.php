@@ -4,14 +4,14 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-
+use App\Http\Controllers\PlayerEmbedController;
 use App\Http\Controllers\PodcastAppController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\EpisodeController;   // ← singular, used for ALL episode routes incl. show
+use App\Http\Controllers\EpisodeController;               // singular controller
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\TestController;
 use App\Http\Controllers\CommentController;
@@ -19,14 +19,14 @@ use App\Http\Controllers\EpisodeChapterController;
 use App\Http\Controllers\EpisodeTranscriptController;
 use App\Http\Controllers\DistributionController;
 use App\Http\Controllers\Auth\LocalAuthController;
-use App\Http\Controllers\EpisodeAiController;
+use App\Http\Controllers\EpisodeAiController;             // <-- make sure class name matches the file
 use App\Http\Controllers\PodcastFeedController;
-use App\Http\Controllers\FeedController;
-
-
-
-
-
+use App\Http\Controllers\SettingsController;  
+use App\Http\Controllers\WebsiteController;     
+use App\Http\Controllers\PublicSiteController;  
+use App\Http\Controllers\StatisticsController; 
+use App\Http\Controllers\SiteController;    // <-- MISSING BEFORE (needed for settings pages)
+// use App\Http\Controllers\EpisodeChaptersJsonController; // uncomment if you actually have this controller
 
 /*
 |--------------------------------------------------------------------------
@@ -39,20 +39,53 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 })->name('home');
+
+/*
+|--------------------------------------------------------------------------
+| Public RSS (no auth)
+|--------------------------------------------------------------------------
+*/
 Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
-    ->name('feed.podcast')
-    ->withoutMiddleware('auth'); // safety guard in case this line ever gets moved
+    ->name('feed.podcast.index')
+    ->withoutMiddleware('auth');
+
 Route::get('/feed.xml', [FeedController::class, 'podcast'])
-    ->name('feed.podcast');
-    /*
+    ->name('feed.podcast')       // keep this if you want a second endpoint; otherwise remove one of them
+    ->withoutMiddleware('auth');
+
+Route::get('/podcast', function () {
+    $row = DB::table('site_settings')->where('key','website')->first();
+    $s = $row ? (array) json_decode($row->value, true) : ['template'=>'zen'];
+    // dispatch to a blade per template
+    return view('site.templates.'.$s['template'], ['settings'=>$s]);
+});
+
+
+Route::get('/podcast',  [PublicSiteController::class, 'index'])->name('site.home');
+Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site.episode');
+
+// Public site using the SAVED template
+Route::get('/site', [SiteController::class, 'show'])->name('site.show');
+
+// Preview a specific template without saving
+Route::get('/site/preview/{template}', [SiteController::class, 'preview'])
+    ->whereIn('template', ['zen','frontrow','focuspod'])
+    ->name('site.preview');
+
+Route::get('/site/preview/{template}', [\App\Http\Controllers\SiteController::class, 'preview'])
+  ->whereIn('template', ['zen','frontrow','focuspod'])
+  ->name('site.preview');
+
+
+/*
 |--------------------------------------------------------------------------
 | Guest routes
 |--------------------------------------------------------------------------
 */
 Route::middleware('guest')->group(function () {
     Route::view('/login', 'auth.login')->name('login');
-    Route::get('/login',  [LocalAuthController::class, 'create'])->name('login'); // show form
-    Route::post('/login', [LocalAuthController::class, 'store'])->name('login.attempt'); // handle form
+    Route::get('/login',  [LocalAuthController::class, 'create'])->name('login');           // show form
+    Route::post('/login', [LocalAuthController::class, 'store'])->name('login.attempt');   // handle form
 
     Route::get('/register',  [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
@@ -64,8 +97,6 @@ Route::middleware('guest')->group(function () {
     Route::get('/auth/{provider}/callback', [SocialController::class, 'callback'])
         ->whereIn('provider', ['google','microsoft','facebook'])
         ->name('social.callback');
-    
-  
 });
 
 /*
@@ -74,8 +105,7 @@ Route::middleware('guest')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->group(function () {
-
-    // Email verification UX (optional; keep if you use it)
+    // Email verification UX (optional)
     Route::get('/verify-email', fn () => view('auth.verify-email'))->name('verification.notice');
 
     Route::get('/verify-email/{id}/{hash}', function (EmailVerificationRequest $request) {
@@ -97,120 +127,201 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    // Podcast RSS feed (public)
-    
+    // website
+    Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.themes.edit');
+    Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.themes.update');
+    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
 
-    // Podcasting 2.0 helpers (optional but recommended)
-    Route::get('/episodes/{episode}/chapters.json', [EpisodeChaptersJsonController::class, 'show'])
-        ->name('episodes.chapters.json');
+
+    Route::get('/distribution/website', [WebsiteController::class, 'edit'])
+    ->name('website.edit');
+
+    Route::post('/distribution/website', [WebsiteController::class, 'update'])
+        ->name('website.update');
+
+    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])
+    ->name('website.banner.clear');
+
+    // Podcasting 2.0 (only if you have the controller)
+    // Route::get('/episodes/{episode}/chapters.json', [EpisodeChaptersJsonController::class, 'show'])
+    //     ->name('episodes.chapters.json');
+
     /*
-    You already have transcript download in your EpisodeTranscriptController.
-    Ensure you have a public download route that returns the stored transcript file:
-    Route::get('/episodes/{episode}/transcript', [EpisodeTranscriptController::class, 'download'])
-        ->name('episodes.transcript.download');
+    |--------------------------------------------------------------------------
+    | Episodes (CRUD + show)
+    |--------------------------------------------------------------------------
     */
-
-    // Episodes (CRUD + show)
-    Route::get('/episodes',                 [PageController::class, 'episodes'])->name('episodes');         // list
+    Route::get('/episodes',                 [PageController::class, 'episodes'])->name('episodes'); // list page (blade)
     Route::get('/episodes/create',          [EpisodeController::class, 'create'])->name('episodes.create');
     Route::post('/episodes',                [EpisodeController::class, 'store'])->name('episodes.store');
-    Route::get('/episodes/{episode}',       [EpisodeController::class, 'show'])->name('episodes.show');     // ← show (singular controller)
+    Route::get('/episodes/{episode}',       [EpisodeController::class, 'show'])->name('episodes.show');
+
+    Route::get('/episodes/{episode}/edit',  [EpisodeController::class, 'edit'])
+        ->middleware('can:update,episode')->name('episodes.edit');
+
+    Route::put   ('/episodes/{episode}',    [EpisodeController::class, 'update'])
+        ->middleware('can:update,episode')->name('episodes.update');
+
+    Route::delete('/episodes/{episode}',    [EpisodeController::class, 'destroy'])
+        ->middleware('can:delete,episode')->name('episodes.destroy');
+
+        
+
+    // Publish / Unpublish
     Route::patch('/episodes/{episode}/publish',   [EpisodeController::class, 'publish'])->name('episodes.publish');
     Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
 
-    Route::get('/episodes/{episode}/edit', [EpisodeController::class, 'edit'])
-    ->middleware('can:update,episode')->name('episodes.edit');
+    // Cover upload/remove
+    Route::patch ('/episodes/{episode}/cover', [EpisodeController::class, 'uploadCover'])->name('episodes.cover.upload');
+    Route::delete('/episodes/{episode}/cover', [EpisodeController::class, 'removeCover'])->name('episodes.cover.remove');
 
-    Route::put('/episodes/{episode}', [EpisodeController::class, 'update'])
-        ->middleware('can:update,episode')->name('episodes.update');
+    // AI actions (consistent naming with EpisodeAiController)
+    Route::post('/episodes/{episode}/ai/enhance',  [EpisodeAiController::class, 'enhance'])->name('episodes.ai.enhance');
+    Route::post('/episodes/{episode}/ai/cancel',   [EpisodeAiController::class, 'cancel'])->name('episodes.ai.cancel');
+    Route::get ('/episodes/{episode}/ai/progress', [EpisodeAiController::class, 'progress'])->name('episodes.ai.progress');
 
-    Route::delete('/episodes/{episode}', [EpisodeController::class, 'destroy'])
-    ->middleware('can:delete,episode')->name('episodes.destroy');
-    
-    Route::post('/episodes/{episode}/ai/enhance', [EpisodeAiController::class, 'enhance'])
-    ->middleware(['auth'])
-    ->name('episodes.ai.enhance');
-
-    // Podcast apps (distribution) - upsert/destroy
-    Route::middleware('auth')->group(function () {
-        Route::post('/distribution/apps/{provider}', [PodcastAppController::class,'upsert'])
-            ->name('apps.upsert');        // Manage/Submit modal posts here
-
-        Route::delete('/distribution/apps/{provider}', [PodcastAppController::class,'destroy'])
-            ->name('apps.destroy');
-    });
-    
-    Route::middleware('auth')->group(function () {
-        Route::get('/distribution', [PageController::class, 'distribution'])->name('distribution');
-
-        // Save / update a directory config
-        Route::post('/distribution/{slug}', [DistributionController::class, 'save'])
-            ->name('distribution.save');
-
-        // Disconnect / clear a directory config
-        Route::delete('/distribution/{slug}', [DistributionController::class, 'disconnect'])
-            ->name('distribution.disconnect');
-    });
-
-
-    // Comments
-    Route::post('/episodes/{episode}/comments', [CommentController::class, 'store'])
-    ->middleware(['auth','throttle:20,1'])
-    ->name('comments.store');
-
-    Route::delete('/comments/{comment}',        [CommentController::class, 'destroy'])->name('comments.destroy');
-    Route::post('/comments/{comment}/approve',  [CommentController::class, 'approve'])->name('comments.approve');
-
-    // Other left-menu pages
-    Route::get('/distribution',  [PageController::class, 'distribution'])->name('distribution');
-    Route::get('/statistics',    [PageController::class, 'statistics'])->name('statistics');
-    Route::get('/monetization',  [PageController::class, 'monetization'])->name('monetization');
-    Route::get('/settings',      [PageController::class, 'settings'])->name('settings');
-
-
-
-    // routes settings
- 
-    Route::post('/settings/cover',        [ProfileController::class, 'uploadCover'])->name('settings.cover.upload');
-    Route::delete('/settings/cover',      [ProfileController::class, 'deleteCover'])->name('settings.cover.delete');
-    Route::patch('/settings/account',      [PageController::class, 'updateAccount'])->name('settings.account');
-    Route::post('/settings/profile-photo', [PageController::class, 'uploadProfilePhoto'])->name('settings.profile-photo');
-    Route::delete('/settings/profile-photo',[PageController::class, 'removeProfilePhoto'])->name('settings.profile-photo.remove');
-    
-
-// EPOSIDES - cover upload/remove, publish/unpublish
-    Route::patch('/episodes/{episode}/cover', [EpisodeController::class, 'uploadCover'])
-        ->name('episodes.cover.upload');
-    Route::delete('/episodes/{episode}/cover', [EpisodeController::class, 'removeCover'])
-        ->name('episodes.cover.remove');
-    Route::put('/episodes/{episode}', [EpisodeController::class, 'update'])->name('episodes.update');
-    Route::patch('/episodes/{episode}/publish', [EpisodeController::class, 'publish'])->name('episodes.publish');
-    Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
-    Route::match(['put', 'patch'], '/episodes/{episode}', [EpisodeController::class, 'update'])
-    ->name('episodes.update');
-
-    
+    // Episode sub-resources
     Route::prefix('episodes/{episode}')->group(function () {
-    
         // Chapters
-    Route::get ('/chapters',       [EpisodeChapterController::class, 'index'])->name('episodes.chapters.index');
-    Route::post('/chapters/sync',  [EpisodeChapterController::class, 'sync'])->name('episodes.chapters.sync');
-    Route::delete('/chapters/{chapter}', [EpisodeChapterController::class, 'destroy'])->name('episodes.chapters.destroy');
+        Route::get   ('/chapters',                [EpisodeChapterController::class, 'index'])->name('episodes.chapters.index');
+        Route::post  ('/chapters/sync',           [EpisodeChapterController::class, 'sync'])->name('episodes.chapters.sync');
+        Route::delete('/chapters/{chapter}',      [EpisodeChapterController::class, 'destroy'])->name('episodes.chapters.destroy');
 
-    // Transcript
-    Route::get ('/transcript',     [EpisodeTranscriptController::class, 'show'])->name('episodes.transcript.show');
-    Route::post('/transcript',     [EpisodeTranscriptController::class, 'store'])->name('episodes.transcript.store');
-    Route::delete('/transcript',   [EpisodeTranscriptController::class, 'destroy'])->name('episodes.transcript.destroy');
-    Route::get ('/transcript/download', [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
+        // Transcript
+        Route::get   ('/transcript',              [EpisodeTranscriptController::class, 'show'])->name('episodes.transcript.show');
+        Route::post  ('/transcript',              [EpisodeTranscriptController::class, 'store'])->name('episodes.transcript.store');
+        Route::delete('/transcript',              [EpisodeTranscriptController::class, 'destroy'])->name('episodes.transcript.destroy');
+        Route::get   ('/transcript/download',     [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
     });
- 
-    Route::middleware('auth')->group(function () {
-        Route::post('/episodes/{episode}/ai/enhance',  [EpisodeAIController::class, 'enhance'])->name('episodes.ai.enhance');
-        Route::post('/episodes/{episode}/ai/cancel',  [EpisodeAIController::class, 'cancel'])->name('episodes.ai.cancel');
-        Route::get ('/episodes/{episode}/ai/progress', [EpisodeAIController::class, 'progress'])->name('episodes.ai.progress');
-    });     
 
-   // ai test screen
+    /*
+    |--------------------------------------------------------------------------
+    | Distribution, Statistics, Monetization (left menu)
+    |--------------------------------------------------------------------------
+    */
+    
+    Route::get('/distribution', [DistributionController::class, 'index'])->name('distribution');
+
+    Route::get('/embed/player', [PlayerEmbedController::class, 'iframe'])   // HTML for <iframe>
+     ->name('embed.player');
+
+    Route::get('/embed/player.js', [PlayerEmbedController::class, 'script']) // JS loader (no iframe needed in markup)
+        ->name('embed.player.script');
+
+    Route::get('/oembed', [PlayerEmbedController::class, 'oembed'])         // optional: oEmbed JSON
+     ->name('embed.oembed');
+
+
+    Route::get('/distribution/podcast-apps', [DistributionController::class, 'player'])
+     ->name('distribution.player');
+
+    Route::prefix('distribution')->name('distribution.')->group(function () {
+        Route::get('/apps',    [DistributionController::class, 'apps'])->name('apps');
+        Route::get('/social',  [DistributionController::class, 'social'])->name('social');
+        Route::get('/website', [DistributionController::class, 'website'])->name('website');
+        Route::get('/player',  [DistributionController::class, 'player'])->name('player');
+
+
+
+        // existing actions
+        Route::post('/{slug}',   [DistributionController::class, 'save'])->name('save');
+        Route::delete('/{slug}', [DistributionController::class, 'disconnect'])->name('disconnect');
+    });
+        
+    
+    Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics');
+    Route::get('/statistics/range/{range}', [StatisticsController::class, 'index'])->whereNumber('range')->name('statistics.range');
+
+
+
+        Route::get('/monetization', [PageController::class, 'monetization'])->name('monetization');
+        Route::prefix('distribution')->name('distribution.')->group(function () {
+            // Social Share landing (your current page)
+            Route::get('/social', [DistributionController::class, 'social'])->name('social');
+
+            // ---- OAuth-ish endpoints per provider ----
+            Route::prefix('social')->name('social.')->group(function () {
+                // Start connect
+                Route::get('/auth/{provider}', [DistributionController::class, 'socialRedirect'])
+                    ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
+                    ->name('auth');
+
+                // OAuth callback
+                Route::get('/auth/{provider}/callback', [DistributionController::class, 'socialCallback'])
+                    ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
+                    ->name('callback');
+
+                // Disconnect
+                Route::delete('/{provider}', [DistributionController::class, 'socialDisconnect'])
+                    ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
+                    ->name('disconnect');
+
+                // Optional: quick test/share button
+                Route::post('/test/{provider}', [DistributionController::class, 'socialTest'])
+                    ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
+                    ->name('test');
+            });
+        });
+    
+            Route::middleware(['auth'])->group(function () {
+            Route::get('/website/themes', [WebsiteController::class, 'edit'])->name('website.themes');
+            Route::post('/website/themes', [WebsiteController::class, 'update'])->name('website.themes.update');
+        });
+    
+    
+    
+    /*
+    |--------------------------------------------------------------------------
+    | SETTINGS (grouped, with proper name prefix -> settings.*)
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware(['auth']) // adjust middleware as needed
+        ->prefix('settings')
+        ->name('settings.')
+        ->group(function () {
+            // Landing page (/settings)
+            Route::get('/', [PageController::class, 'settings'])->name('index');
+
+            // Profile / Cover / Account actions
+            Route::post  ('/cover',         [ProfileController::class, 'uploadCover'])->name('cover.upload');
+            Route::delete('/cover',         [ProfileController::class, 'deleteCover'])->name('cover.delete');
+            Route::patch ('/account',       [PageController::class,    'updateAccount'])->name('account');
+            Route::post  ('/profile-photo', [PageController::class,    'uploadProfilePhoto'])->name('profile-photo');
+            Route::delete('/profile-photo', [PageController::class,    'removeProfilePhoto'])->name('profile-photo.remove');
+
+            // Pages: General
+            Route::get ('/general', [SettingsController::class, 'general'])->name('general');
+            Route::post('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+            // If you prefer PUT:
+            // Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+
+            // Pages: Feed
+            Route::get ('/feed', [SettingsController::class, 'feed'])->name('feed');
+            Route::post('/feed', [SettingsController::class, 'updateFeed'])->name('feed.update');
+            // Route::put('/feed', [SettingsController::class, 'updateFeed'])->name('feed.update');
+
+            // Plugins
+            Route::get ('/plugins', [SettingsController::class, 'plugins'])->name('plugins');
+            Route::post('/plugins', [SettingsController::class, 'updatePlugins'])->name('plugins.update');
+
+            // Import
+            Route::get ('/import', [SettingsController::class, 'import'])->name('import');
+            Route::post('/import', [SettingsController::class, 'handleImport'])->name('import.handle');
+        });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Comments
+    |--------------------------------------------------------------------------
+    */
+    Route::post('/episodes/{episode}/comments', [CommentController::class, 'store'])
+        ->middleware(['auth','throttle:20,1'])
+        ->name('comments.store');
+
+    Route::delete('/comments/{comment}',       [CommentController::class, 'destroy'])->name('comments.destroy');
+    Route::post('/comments/{comment}/approve', [CommentController::class, 'approve'])->name('comments.approve');
+
+    // AI debug (optional)
     Route::get('/episodes/{episode}/ai/debug', function (\App\Models\Episode $episode) {
         $id = $episode->id;
         return response()->json([
@@ -220,12 +331,12 @@ Route::middleware('auth')->group(function () {
             'pid'       => Cache::get("ai:$id:pid"),
             'queueSize' => method_exists(\Queue::class, 'size') ? \Queue::size('default') : null,
         ]);
-    })->middleware('auth');
+    })->name('episodes.ai.debug');
 
     // Test screen
     Route::get('/test/totals', [TestController::class, 'totals'])->name('test.totals');
 
-    // Logout (POST)
+    // Logout
     Route::post('/logout', function (Request $request) {
         Auth::logout();
         $request->session()->invalidate();

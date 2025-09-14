@@ -189,53 +189,9 @@ class PageController extends Controller
     /**
      * Statistics page.
      */
-    public function statistics(Request $request)
-    {
-        $days = (int) $request->query('range', 30);
-        $days = in_array($days, [7, 30, 90], true) ? $days : 30;
 
-        $from = now()->subDays($days - 1)->startOfDay();
-        $to   = now();
+    // PageController.php
+    
 
-        $raw = Download::selectRaw('date(created_at) as d, count(*) as c')
-            ->whereBetween('created_at', [$from, $to])
-            ->groupBy('d')
-            ->orderBy('d')
-            ->pluck('c', 'd')
-            ->all();
-
-        $series = [];
-        $cursor = $from->copy();
-        while ($cursor <= $to) {
-            $k = $cursor->toDateString();
-            $series[] = ['date' => $k, 'count' => $raw[$k] ?? 0];
-            $cursor->addDay();
-        }
-
-        $totals = [
-            'range'     => array_sum(array_column($series, 'count')),
-            'yesterday' => Download::whereDate('created_at', now()->subDay()->toDateString())->count(),
-            'last7'     => Download::where('created_at', '>=', now()->subDays(6)->startOfDay())->count(),
-            'last30'    => Download::where('created_at', '>=', now()->subDays(29)->startOfDay())->count(),
-            'all'       => Download::count(),
-        ];
-
-        $topEpisodes = DB::table('downloads')
-            ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
-            ->whereBetween('downloads.created_at', [$from, $to])
-            ->select('episodes.id', 'episodes.title', DB::raw('COUNT(downloads.id) as downloads'))
-            ->groupBy('episodes.id', 'episodes.title')
-            ->orderByDesc('downloads')
-            ->limit(10)
-            ->get();
-
-        return view('pages.statistics', [
-            'series'      => $series,
-            'totals'      => $totals,
-            'topEpisodes' => $topEpisodes,
-            'days'        => $days,
-            'from'        => $from,
-            'to'          => $to,
-        ]);
-    }
+   
 }

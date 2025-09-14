@@ -72,7 +72,7 @@
           @endif
 
           <div class="muted-hint mt-2">
-             2MB square image looks best.
+            JPG/PNG/WebP up to 2MB. A square image looks best.
           </div>
         </div>
       </div>
@@ -181,11 +181,24 @@
       @endif
 
       <div class="muted-hint mt-2">
-         1400px and 2048 px.
+        Recommended: square JPG/PNG between 1400 and 2048 px.
       </div>
     </div>
 
- 
+    {{-- RSS --}}
+    <div class="section-card p-4 mt-3">
+      <h6 class="mb-2">Podcast RSS</h6>
+      <div class="input-group mb-2">
+        <input type="text" class="form-control" id="rssUrl"
+               value="{{ $rss ?? url('/feed/podcast.xml') }}" readonly>
+        <button type="button" class="btn btn-outline-secondary" id="copyRss">
+          <i class="bi bi-clipboard-check"></i> Copy
+        </button>
+      </div>
+      <small class="text-secondary">
+        Submit this URL to directories (Apple, Spotify, etc.).
+      </small>
+    </div>
 
     {{-- Danger Zone --}}
     <div class="section-card p-4 mt-3">

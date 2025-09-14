@@ -10,39 +10,25 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 
   <style>
-    :root{
-      --brand-1:#6366f1; /* indigo */
-      --brand-2:#06b6d4; /* cyan   */
-      --sidebar-w: 260px;
-    }
-    body { background-color:#f5f7fb; }
+    :root{ --brand-1:#6366f1; --brand-2:#06b6d4; --sidebar-w:260px; }
+    body{ background-color:#f5f7fb; }
+    .modal{ z-index:3000 } .modal-backdrop{ z-index:2990 }
 
-    /* Ensure modals appear above sticky UI */
-    .modal{ z-index:3000; }
-    .modal-backdrop{ z-index:2990; }
-
-    /* Grid layout */
     .app{
-      min-height:100vh;
-      display:grid;
-      grid-template-columns: var(--sidebar-w) 1fr;
-      grid-template-rows: auto 1fr;
-      grid-template-areas:
-        "sidebar topbar"
-        "sidebar main";
+      min-height:100vh; display:grid;
+      grid-template-columns:var(--sidebar-w) 1fr;
+      grid-template-rows:auto 1fr;
+      grid-template-areas:"sidebar topbar" "sidebar main";
     }
     .sidebar{
-      grid-area: sidebar;
-      background:#0f172a; color:#cbd5e1;
-      position:sticky; top:0; height:100vh; padding:1rem 0;
-      z-index:1030; /* below modal/backdrop */
+      grid-area:sidebar; background:#0f172a; color:#cbd5e1;
+      position:sticky; top:0; height:100vh; padding:1rem 0; z-index:1030;
     }
     .topbar{
-      grid-area: topbar;
-      background:#fff; border-bottom:1px solid rgba(0,0,0,.06);
+      grid-area:topbar; background:#fff; border-bottom:1px solid rgba(0,0,0,.06);
       position:sticky; top:0; z-index:1010;
     }
-    .main{ grid-area: main; position:relative; z-index:1; }
+    .main{ grid-area:main; position:relative; z-index:1; }
 
     /* Sidebar UI */
     .sidebar .brand{
@@ -57,87 +43,23 @@
     }
     .sidebar .nav-link{ color:#cbd5e1; border-radius:.5rem; padding:.6rem 1rem; margin:.2rem .75rem; }
     .sidebar .nav-link.active,.sidebar .nav-link:hover{ color:#fff; background:rgba(255,255,255,.08); }
-    .sidebar .upgrade{ position:absolute; left:1rem; right:1rem; bottom:1rem; }
+    .sidebar .collapse .nav-link.active{ background:rgba(255,255,255,.06); color:#fff; }
+    .sidebar .nav-link.ps-4{ font-size:.95rem; opacity:.95; }
 
-    /* Cards & tiles */
     .section-card{ background:#fff; border:1px solid rgba(0,0,0,.06); border-radius:.75rem; box-shadow:0 10px 30px rgba(0,0,0,.03); }
-    .tile{ border:1px solid rgba(0,0,0,.06); border-radius:.75rem; background:#fff; padding:1rem 1.25rem; }
-    .tile h3{ font-size:.9rem; color:#64748b; margin:0 0 .3rem; }
-    .tile .value{ font-weight:700; font-size:1.75rem; }
-
-    /* Compact helpers */
-    .section-card.compact{ padding:.5rem .5rem 0; border-radius:.6rem; }
-    .badge-compact{ font-size:.72rem; font-weight:600; padding:.28rem .45rem; }
-    .pill-compact{ font-size:.72rem; padding:.25rem .5rem; }
-    .btn-xs{
-      --bs-btn-padding-y:.28rem;
-      --bs-btn-padding-x:.55rem;
-      --bs-btn-font-size:.78rem;
-      line-height:1.15;
-    }
-    .header-compact{ margin-bottom:.6rem; }
-
-    /* Blush buttons (global) */
-    .btn-blush{
-      --blush:#ec4899;         /* pink-500 */
-      --blush-dark:#db2777;    /* pink-600 */
-      --blush-darker:#be185d;  /* pink-700 */
-      color:#fff;
-      background:linear-gradient(135deg,#fb7185,#f472b6);
-      border-color:var(--blush);
-      box-shadow:0 .35rem 1rem rgba(236,72,153,.25);
-    }
-    .btn-blush:hover{
-      color:#fff;
-      background:linear-gradient(135deg,var(--blush-dark),#ec4899);
-      border-color:var(--blush-dark);
-    }
-    .btn-blush:active{
-      background:linear-gradient(135deg,var(--blush-darker),var(--blush-dark));
-      border-color:var(--blush-darker);
-    }
-    .btn-blush:focus{
-      outline:0;
-      box-shadow:0 .25rem .75rem rgba(236,72,153,.35),0 0 0 .2rem rgba(236,72,153,.25);
-    }
-    i.bi, .bi, svg.bi {
-      font-size: 1rem;
-      line-height: 1;
-      position: static;
-      max-width: 1em;
-      max-height: 1em;
-    }
-
-    /* Bootstrap caret size */
-    .dropdown-toggle::after { border-width: .3em; }
-
-    .btn-outline-blush{
-      --blush:#ec4899;
-      color:var(--blush);
-      border-color:var(--blush);
-      background:transparent;
-    }
-    .btn-outline-blush:hover{
-      color:#fff;
-      background:var(--blush);
-      border-color:var(--blush);
-    }
-
-    /* Avatar helpers */
-    .object-fit-cover{ object-fit:cover; }
-    .avatar-22{ width:22px; height:22px; }
+    .btn-blush{ color:#fff; background:linear-gradient(135deg,#fb7185,#f472b6); border-color:#ec4899; box-shadow:0 .35rem 1rem rgba(236,72,153,.25)}
+    .btn-blush:hover{ color:#fff; background:linear-gradient(135deg,#db2777,#ec4899); border-color:#db2777 }
+    .btn-outline-blush{ color:#ec4899; border-color:#ec4899 }
+    .btn-outline-blush:hover{ color:#fff; background:#ec4899; border-color:#ec4899 }
+    i.bi, .bi, svg.bi{ font-size:1rem; line-height:1 }
 
     /* Mobile sidebar */
     @media (max-width:992px){
-      .app{ grid-template-columns:1fr; grid-template-areas:"topbar" "main"; }
-      .sidebar{
-        position:fixed; inset:0 auto 0 0; width:var(--sidebar-w);
-        transform:translateX(-100%); transition:transform .25s;
-        z-index:1050;
-      }
-      .sidebar.show{ transform:translateX(0); }
-      .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1049; }
-      .sidebar-backdrop.show{ display:block; }
+      .app{ grid-template-columns:1fr; grid-template-areas:"topbar" "main" }
+      .sidebar{ position:fixed; inset:0 auto 0 0; width:var(--sidebar-w); transform:translateX(-100%); transition:transform .25s; z-index:1050 }
+      .sidebar.show{ transform:translateX(0) }
+      .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1049 }
+      .sidebar-backdrop.show{ display:block }
     }
   </style>
 
@@ -157,32 +79,131 @@
          href="{{ route('dashboard') }}" @if(request()->routeIs('dashboard')) aria-current="page" @endif>
         <i class="bi bi-speedometer2 me-2"></i>Dashboard
       </a>
+
       <a class="nav-link {{ request()->routeIs('episodes*') ? 'active' : '' }}"
          href="{{ route('episodes') }}" @if(request()->routeIs('episodes*')) aria-current="page" @endif>
         <i class="bi bi-mic me-2"></i>Episodes
       </a>
-      <a class="nav-link {{ request()->routeIs('distribution*') ? 'active' : '' }}"
-         href="{{ route('distribution') }}" @if(request()->routeIs('distribution*')) aria-current="page" @endif>
-        <i class="bi bi-broadcast-pin me-2"></i>Distribution
-      </a>
+
+      {{-- Distribution dropdown --}}
+      @php
+        $inDistribution = request()->routeIs('distribution*');
+
+        $distIndex  = route('distribution');
+
+        // Use Route::has(...) to check existence of named routes
+        $appsUrl    = \Route::has('distribution.apps')    ? route('distribution.apps')    : $distIndex;
+        $socialUrl  = \Route::has('distribution.social')  ? route('distribution.social')  : $distIndex;
+        $websiteUrl = \Route::has('distribution.website') ? route('distribution.website') : $distIndex;
+        $playerUrl  = \Route::has('distribution.player')  ? route('distribution.player')  : $distIndex;
+      @endphp
+      <div class="mt-2">
+        <div class="d-flex align-items-center justify-content-between mx-2">
+          <a class="nav-link flex-grow-1 {{ $inDistribution ? 'active' : '' }}" href="">
+            <i class="bi bi-broadcast-pin me-2"></i>Distribution
+          </a>
+          <button class="btn btn-sm btn-outline-secondary ms-2"
+                  type="button"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#distributionMenu"
+                  aria-controls="distributionMenu"
+                  aria-expanded="{{ $inDistribution ? 'true' : 'false' }}">
+            <i class="bi bi-chevron-down"></i>
+          </button>
+        </div>
+
+        <div id="distributionMenu" class="collapse {{ $inDistribution ? 'show' : '' }}">
+          <ul class="list-unstyled my-2">
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}"
+                 href="{{ $appsUrl }}">
+                <i class="bi bi-app-indicator me-2"></i>Podcast Apps
+                <span class="ms-2 align-middle" style="color:#ef4444;">•</span>
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}"
+                 href="{{ $socialUrl }}">
+                <i class="bi bi-share me-2"></i>Social Share
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}"
+                 href="{{ $websiteUrl }}">
+                <i class="bi bi-globe2 me-2"></i>Podcast Website
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}"
+                 href="{{ $playerUrl }}">
+                <i class="bi bi-play-btn me-2"></i>Embeddable Player
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <a class="nav-link {{ request()->routeIs('statistics*') ? 'active' : '' }}"
          href="{{ route('statistics') }}" @if(request()->routeIs('statistics*')) aria-current="page" @endif>
         <i class="bi bi-graph-up-arrow me-2"></i>Statistics
       </a>
+
       <a class="nav-link {{ request()->routeIs('monetization*') ? 'active' : '' }}"
          href="{{ route('monetization') }}" @if(request()->routeIs('monetization*')) aria-current="page" @endif>
         <i class="bi bi-currency-dollar me-2"></i>Monetization
       </a>
-      <a class="nav-link {{ request()->routeIs('settings*') ? 'active' : '' }}"
-         href="{{ route('settings') }}" @if(request()->routeIs('settings*')) aria-current="page" @endif>
-        <i class="bi bi-gear me-2"></i>Settings
-      </a>
+
+      {{-- Settings dropdown --}}
+      @php $inSettings = request()->routeIs('settings.*'); @endphp
+      <div class="mt-2">
+        <div class="d-flex align-items-center justify-content-between mx-2">
+          <a class="nav-link flex-grow-1 {{ $inSettings ? 'active' : '' }}"
+             href="{{ route('settings.index') }}">
+            <i class="bi bi-gear me-2"></i>Settings
+          </a>
+          <button class="btn btn-sm btn-outline-secondary ms-2"
+                  type="button"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#settingsMenu"
+                  aria-controls="settingsMenu"
+                  aria-expanded="{{ $inSettings ? 'true' : 'false' }}">
+            <i class="bi bi-chevron-down"></i>
+          </button>
+        </div>
+
+        <div id="settingsMenu" class="collapse {{ $inSettings ? 'show' : '' }}">
+          <ul class="list-unstyled my-2">
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('settings.general') ? 'active' : '' }}"
+                 href="{{ route('settings.general') }}">
+                <i class="bi bi-sliders me-2"></i>General
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('settings.feed') ? 'active' : '' }}"
+                 href="{{ route('settings.feed') }}">
+                <i class="bi bi-rss me-2"></i>Feed
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('settings.plugins') ? 'active' : '' }}"
+                 href="{{ route('settings.plugins') }}">
+                <i class="bi bi-plug me-2"></i>Plugins
+              </a>
+            </li>
+            <li>
+              <a class="nav-link ps-4 {{ request()->routeIs('settings.import') ? 'active' : '' }}"
+                 href="{{ route('settings.import') }}">
+                <i class="bi bi-cloud-arrow-down me-2"></i>Import from RSS
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
     </nav>
 
     <div class="upgrade">
-      <button type="button" class="btn btn-outline-light w-100">
-        <i class="bi bi-stars me-1"></i>Upgrade
-      </button>
+    
     </div>
   </aside>
 
@@ -200,7 +221,6 @@
     <h1 class="h5 mb-0">@yield('page-title', 'Dashboard')</h1>
 
     <div class="d-flex align-items-center gap-2">
-      {{-- New Episode opens global modal --}}
       <a class="btn btn-blush" data-bs-toggle="modal" data-bs-target="#episodeModal">
         <i class="bi bi-plus-lg me-1"></i>New Episode
       </a>
@@ -210,15 +230,14 @@
       </button>
 
       @php
-        $user   = auth()->user();
-        $avatar = $user?->avatar_url ?? null;  // accessor on User model
-        
+        $user = auth()->user();
+        $avatar = $user?->avatar_url ?? null;
       @endphp
       <div class="dropdown">
         <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2 dropdown-toggle"
                 data-bs-toggle="dropdown" type="button">
           @if($avatar)
-            <img src="{{ $avatar }}" alt="Profile" class="rounded-circle object-fit-cover avatar-22">
+            <img src="{{ $avatar }}" alt="Profile" class="rounded-circle object-fit-cover" style="width:22px;height:22px;">
           @else
             <i class="bi bi-person-circle"></i>
           @endif
@@ -226,7 +245,7 @@
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
           <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="bi bi-person me-2"></i>Profile</a></li>
-          <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="bi bi-gear me-2"></i>Settings</a></li>
+          <li><a class="dropdown-item" href="{{ route('settings.index') }}"><i class="bi bi-gear me-2"></i>Settings</a></li>
           <li><hr class="dropdown-divider"></li>
           <li>
             <form method="POST" action="{{ route('logout') }}">
@@ -252,39 +271,27 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  (function () {
-    const sidebar  = document.getElementById('sidebar');
-    const backdrop = document.getElementById('sidebarBackdrop');
-    const openBtn  = document.getElementById('openSidebar');
+(function () {
+  const sidebar  = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const openBtn  = document.getElementById('openSidebar');
 
-    if (openBtn) {
-      openBtn.addEventListener('click', () => {
-        sidebar.classList.add('show');
-        backdrop.classList.add('show');
-      });
-    }
-    if (backdrop) {
-      backdrop.addEventListener('click', () => {
-        sidebar.classList.remove('show');
-        backdrop.classList.remove('show');
-      });
-    }
+  if (openBtn) openBtn.addEventListener('click', () => {
+    sidebar.classList.add('show'); backdrop.classList.add('show');
+  });
+  if (backdrop) backdrop.addEventListener('click', () => {
+    sidebar.classList.remove('show'); backdrop.classList.remove('show');
+  });
 
-    // Avoid anchors with "#" from polluting the URL
-    document.querySelectorAll('a[href="#"]').forEach(a => {
-      a.addEventListener('click', e => e.preventDefault());
-    });
+  // Avoid anchors with "#" from polluting the URL
+  document.querySelectorAll('a[href="#"]').forEach(a => a.addEventListener('click', e => e.preventDefault()));
 
-    // Auto re-open "New Episode" modal after validation errors
-    const shouldOpen = @json(old('_show_episode_modal') ? true : false);
-    if (shouldOpen) {
-      const m = new bootstrap.Modal(document.getElementById('episodeModal'));
-      m.show();
-    }
-  })();
+  // Auto re-open "New Episode" modal after validation errors
+  const shouldOpen = @json(old('_show_episode_modal') ? true : false);
+  if (shouldOpen) new bootstrap.Modal(document.getElementById('episodeModal')).show();
+})();
 </script>
 
-{{-- Page-level modal/content stacks --}}
 @stack('modals')
 @stack('scripts')
 </body>

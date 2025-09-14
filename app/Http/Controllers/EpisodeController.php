@@ -133,6 +133,7 @@ class EpisodeController extends Controller
     public function publish(Episode $episode)
     {
         $this->authorizeOwnership($episode);
+        
 
         if (strtolower($episode->status ?? 'draft') !== 'published') {
             $episode->forceFill([
@@ -140,7 +141,7 @@ class EpisodeController extends Controller
                 'published_at' => now(),
             ])->save();
         }
-
+        dispatch(new \App\Jobs\ShareEpisodeToSocials($episode));
         return back()->with('success', 'Episode published.');
     }
 
