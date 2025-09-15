@@ -37,7 +37,7 @@ class SettingsController extends Controller
         $s = SiteSetting::singleton();
 
         return view('settings.general', [
-            'title'               => $s->site_title        ?? config('app.name', 'My Podcast'),
+            'title' => $s->site_title ?? 'MyPodcast',
             'description'         => $s->site_desc         ?? '',
             'category'            => $s->site_category     ?? 'Technology',
 

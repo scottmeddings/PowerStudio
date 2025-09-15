@@ -22,11 +22,10 @@ return new class extends Migration {
 
             // ================= CORE SITE SETTINGS =================
             // Mirrors "feed.site_url" etc. from your defaults where relevant.
-            $table->string('feed_url', 2048)->default('https://podcast.powertime.au/feed.xml');
-
-            $table->string('site_title')->nullable();
-            $table->string('site_link', 2048)->default('https://powertime.au');
-            $table->string('site_lang', 20)->default('en-us');
+           $table->string('feed_url', 2048)->nullable();
+           $table->string('site_title')->nullable();
+           $table->string('site_link', 2048)->nullable();
+           $table->string('site_lang', 20)->default('en-us');
 
             $table->text('site_desc')->nullable();
 
@@ -40,6 +39,11 @@ return new class extends Migration {
             $table->boolean('site_explicit')->default(false);
             $table->string('site_category')->nullable();
             $table->string('site_type', 20)->default('episodic'); // or 'serial'
+
+            // migration
+            $table->string('feed_custom_domain')->nullable(); // e.g. "example.com" (optional)
+            $table->string('feed_custom_path')->nullable();   // e.g. "rss" or "new-feed.xml"
+
 
             // =============== WEBSITE / DISPLAY EXTRAS ===============
             $table->string('podcast_subdomain', 63)->nullable();         // left part only

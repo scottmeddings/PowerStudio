@@ -15,11 +15,14 @@
 
       {{-- Podcast Title --}}
       <div class="col-12">
-        <label class="form-label fw-semibold">Podcast Title <span class="text-danger">*</span></label>
-        <input name="title" class="form-control @error('title') is-invalid @enderror"
-               value="{{ old('title',$title) }}" required>
-        @error('title') <div class="invalid-feedback">{{ $message }}</div> @enderror
-      </div>
+          <label class="form-label fw-semibold">Podcast Title <span class="text-danger">*</span></label>
+          <input
+          name="title"
+          class="form-control @error('title') is-invalid @enderror"
+          value="{{ old('title', $title ?? 'MyPodcast') }}"
+          required
+        >
+        </div>
 
       {{-- Brief Description --}}
       <div class="col-12">

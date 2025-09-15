@@ -21,12 +21,16 @@ use App\Http\Controllers\DistributionController;
 use App\Http\Controllers\Auth\LocalAuthController;
 use App\Http\Controllers\EpisodeAiController;             // <-- make sure class name matches the file
 use App\Http\Controllers\PodcastFeedController;
+use App\Http\Controllers\FeedController;
 use App\Http\Controllers\SettingsController;  
 use App\Http\Controllers\WebsiteController;     
 use App\Http\Controllers\PublicSiteController;  
 use App\Http\Controllers\StatisticsController; 
-use App\Http\Controllers\SiteController;    // <-- MISSING BEFORE (needed for settings pages)
-// use App\Http\Controllers\EpisodeChaptersJsonController; // uncomment if you actually have this controller
+use App\Http\Controllers\SiteController;   
+ use App\Http\Controllers\Settings\ImportController;
+use App\Http\Controllers\FeedAliasController; 
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -45,13 +49,14 @@ Route::get('/', function () {
 | Public RSS (no auth)
 |--------------------------------------------------------------------------
 */
-Route::get('/feed/podcast.xml', [PodcastFeedController::class, 'index'])
-    ->name('feed.podcast.index')
-    ->withoutMiddleware('auth');
 
-Route::get('/feed.xml', [FeedController::class, 'podcast'])
-    ->name('feed.podcast')       // keep this if you want a second endpoint; otherwise remove one of them
-    ->withoutMiddleware('auth');
+
+
+
+
+// Catch-all to map a custom feed path/domain from DB → 301 to canonical
+Route::fallback(FeedAliasController::class);
+
 
 Route::get('/podcast', function () {
     $row = DB::table('site_settings')->where('key','website')->first();
@@ -60,6 +65,12 @@ Route::get('/podcast', function () {
     return view('site.templates.'.$s['template'], ['settings'=>$s]);
 });
 
+Route::get('/feed.xml', [PodcastFeedController::class, 'index'])->name('feed.canonical');
+
+// e.g. /podpower/feed.xml
+Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
+    ->where('slug', '[A-Za-z0-9-]+')
+    ->name('feed.bySlug');
 
 Route::get('/podcast',  [PublicSiteController::class, 'index'])->name('site.home');
 Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site.episode');
@@ -142,7 +153,45 @@ Route::middleware('auth')->group(function () {
     Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])
     ->name('website.banner.clear');
 
-    // Podcasting 2.0 (only if you have the controller)
+
+
+
+    //import from another rss feed
+
+    Route::get('/debug/progress-write', function () {
+        Cache::store(config('podpower.rss_progress_store','file'))->put('rss_import:progress', [
+            'message' => 'Ping from /debug/progress-write',
+            'percent' => 9,
+            'started_at' => now()->toIso8601String(),
+        ], now()->addMinutes(5));
+        return 'ok';
+    })->name('debug.progress.write');
+
+    // B) Dispatch the Import job directly (bypass Blade/controller)
+    Route::get('/debug/dispatch-import', function () {
+        Log::info('DEBUG: /debug/dispatch-import called');
+        dispatch(new \App\Jobs\ImportRssFeedJob(
+            request('url', 'https://podcast.powertime.au/feed.xml'),
+            false,
+            optional(auth()->user())->id
+        ))->onQueue('default');
+        return 'queued';
+    })->name('debug.dispatch.import');
+
+    // C) Echo what the status endpoint will return
+    Route::get('/debug/status-read', function () {
+        $data = Cache::store(config('podpower.rss_progress_store','file'))->get('rss_import:progress');
+        Log::info('DEBUG: /debug/status-read', ['data' => $data]);
+        return response()->json(['progress' => $data]);
+    })->name('debug.status.read');
+
+
+    Route::middleware(['web','auth'])->group(function () {
+        Route::get('/settings/import',  [ImportController::class,'show'])->name('settings.import.show');
+        Route::post('/settings/import', [ImportController::class,'handle'])->name('settings.import.handle');
+        Route::get('/settings/import/status', [ImportController::class,'status'])->name('settings.import.status');
+    });
+        // Podcasting 2.0 (only if you have the controller)
     // Route::get('/episodes/{episode}/chapters.json', [EpisodeChaptersJsonController::class, 'show'])
     //     ->name('episodes.chapters.json');
 
