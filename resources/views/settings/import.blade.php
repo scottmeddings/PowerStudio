@@ -15,7 +15,7 @@
                id="import_feed_url"
                name="import_feed_url"
                class="form-control @error('import_feed_url') is-invalid @enderror"
-               value="{{ old('import_feed_url', $import_feed_url ?? 'https://podcast.powertime.au/feed.xml') }}"
+               value="{{ old('import_feed_url', $import_feed_url ?? '') }}"
                placeholder="https://example.com/feed.xml"
                required>
         @error('import_feed_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -119,7 +119,7 @@
 
       setPct(p.percent);
       if (msg) msg.textContent = p.message || 'Starting…';
-      if (dbg) dbg.textContent = 'Polling #'+ (++tick) +' • '+ new Date().toLocaleTimeString();
+      if (dbg) dbg.textContent = 'Saving to PodPower '+ (++tick) +' • '+ new Date().toLocaleTimeString();
 
       interval = 1000; // reset backoff after a good read
 

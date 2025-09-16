@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage; // ⬅️ storage
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -136,94 +137,128 @@ class ImportRssFeedJob implements ShouldQueue
             $slug = Str::slug($title);
 
             // ----- Preserve existing row values where appropriate -----
-   // Natural key
-$key = [
-    'user_id'      => $this->userId,
-    'title'        => $title,
-    'published_at' => $pubAt,
-];
+            $key = [
+                'user_id'      => $this->userId,
+                'title'        => $title,
+                'published_at' => $pubAt,
+            ];
 
-// Might be null on first import
-$existing = \App\Models\Episode::query()->where($key)->first();
+            $existing = Episode::query()->where($key)->first();
 
-// Preserve-or-default values (all null-safe now)
-$downloadsCount = $existing?->downloads_count ?? 0;
-$commentsCount  = $existing?->comments_count  ?? 0;
+            $downloadsCount = $existing?->downloads_count ?? 0;
+            $commentsCount  = $existing?->comments_count  ?? 0;
 
-$aiStatus   = $existing?->ai_status   ?? 'idle';
-$aiProgress = $existing?->ai_progress ?? 0;
-$aiMessage  = $existing?->ai_message  ?? null;
+            $aiStatus   = $existing?->ai_status   ?? 'idle';
+            $aiProgress = $existing?->ai_progress ?? 0;
+            $aiMessage  = $existing?->ai_message  ?? null;
 
-$audioPath  = $existing?->audio_path  ?? null;
-$coverPath  = $existing?->cover_path  ?? null;
-$imagePath  = $existing?->image_path  ?? null;
+            $audioPath  = $existing?->audio_path  ?? null;
+            $coverPath  = $existing?->cover_path  ?? null;
+            $imagePath  = $existing?->image_path  ?? null;
 
-$chapters   = $existing?->chapters   ?? ($chaptersUrl   ?: null);
-$transcript = $existing?->transcript ?? ($transcriptUrl ?: null);
+            $chapters   = $existing?->chapters   ?? ($chaptersUrl   ?: null);
+            $transcript = $existing?->transcript ?? ($transcriptUrl ?: null);
 
-$episodeNumber = $epNum ?? $existing?->episode_number ?? null;
-$episodeNo     = $epNum ?? $existing?->episode_no     ?? null;
+            $episodeNumber = $epNum ?? $existing?->episode_number ?? null;
+            $episodeNo     = $epNum ?? $existing?->episode_no     ?? null;
 
-$durationSecCol  = $durationSeconds ?? $existing?->duration_sec     ?? null;
-$durationSecsCol = $durationSeconds ?? $existing?->duration_seconds ?? null;
+            $durationSecCol  = $durationSeconds ?? $existing?->duration_sec     ?? null;
+            $durationSecsCol = $durationSeconds ?? $existing?->duration_seconds ?? null;
 
-$status   = $existing?->status ?? 'published';
-$explicit = $existing?->explicit ?? $explicitFlag;
-$uuid     = $existing?->uuid ?? (string) \Illuminate\Support\Str::uuid();
+            $status   = $existing?->status ?? 'published';
+            $explicit = $existing?->explicit ?? $explicitFlag;
+            $uuid     = $existing?->uuid ?? (string) Str::uuid();
 
-$audioUrl      = $existing?->audio_url ?: ($enclosureUrl ?: null);
-$imageUrlFinal = $imageUrl ?: ($existing?->image_url ?? null);
+            $audioUrl      = $existing?->audio_url ?: ($enclosureUrl ?: null);
+            $imageUrlFinal = $imageUrl ?: ($existing?->image_url ?? null);
 
-// Write ALL columns (user_id always present in key)
-\Illuminate\Support\Facades\DB::table('episodes')->updateOrInsert(
-    $key,
-    [
-        'slug'              => $existing?->slug ?? $slug,
-        'description'       => $desc !== '' ? $desc : ($existing?->description ?? null),
+            // ----- UPSERT all fields (ensures user_id on first insert) -----
+            DB::table('episodes')->updateOrInsert(
+                $key,
+                [
+                    'slug'              => $existing?->slug ?? $slug,
+                    'description'       => $desc !== '' ? $desc : ($existing?->description ?? null),
 
-        'audio_url'         => $audioUrl,
-        'audio_bytes'       => $existing?->audio_bytes ?? $enclosureSize,
-        'audio_path'        => $audioPath,
+                    'audio_url'         => $audioUrl,
+                    'audio_bytes'       => $existing?->audio_bytes ?? $enclosureSize,
+                    'audio_path'        => $audioPath,
 
-        'duration_seconds'  => $durationSecsCol,
-        'duration_sec'      => $durationSecCol,
+                    'duration_seconds'  => $durationSecsCol,
+                    'duration_sec'      => $durationSecCol,
 
-        'status'            => $status,
-        'downloads_count'   => $downloadsCount,
-        'comments_count'    => $commentsCount,
+                    'status'            => $status,
+                    'downloads_count'   => $downloadsCount,
+                    'comments_count'    => $commentsCount,
 
-        'episode_number'    => $episodeNumber,
-        'episode_type'      => $epType !== '' ? $epType : ($existing?->episode_type ?? 'full'),
-        'explicit'          => $explicit,
-        'season'            => $season ?? $existing?->season,
-        'episode_no'        => $episodeNo,
+                    'episode_number'    => $episodeNumber,
+                    'episode_type'      => $epType !== '' ? $epType : ($existing?->episode_type ?? 'full'),
+                    'explicit'          => $explicit,
+                    'season'            => $season ?? $existing?->season,
+                    'episode_no'        => $episodeNo,
 
-        'image_url'         => $imageUrlFinal,
-        'image_path'        => $imagePath,
-        'cover_path'        => $coverPath,
+                    'image_url'         => $imageUrlFinal,
+                    'image_path'        => $imagePath,
+                    'cover_path'        => $coverPath,
 
-        'chapters'          => $chapters,
-        'transcript'        => $transcript,
+                    'chapters'          => $chapters,
+                    'transcript'        => $transcript,
 
-        'ai_status'         => $aiStatus,
-        'ai_progress'       => $aiProgress,
-        'ai_message'        => $aiMessage,
+                    'ai_status'         => $aiStatus,
+                    'ai_progress'       => $aiProgress,
+                    'ai_message'        => $aiMessage,
 
-        'uuid'              => $uuid,
-        'guid'              => $guid !== '' ? $guid : ($existing?->guid ?? null),
+                    'uuid'              => $uuid,
+                    'guid'              => $guid !== '' ? $guid : ($existing?->guid ?? null),
 
-        'created_at'        => $existing?->created_at ?? now(),
-        'updated_at'        => now(),
-    ]
-);
+                    'created_at'        => $existing?->created_at ?? now(),
+                    'updated_at'        => now(),
+                ]
+            );
 
-// If enclosure appeared and DB had null audio_url, ensure it’s set
-if ($enclosureUrl) {
-    \App\Models\Episode::where($key)
-        ->whereNull('audio_url')
-        ->update(['audio_url' => $enclosureUrl, 'updated_at' => now()]);
-}
+            // If enclosure appeared and DB had null audio_url, ensure it’s set
+            if ($enclosureUrl) {
+                Episode::where($key)
+                    ->whereNull('audio_url')
+                    ->update(['audio_url' => $enclosureUrl, 'updated_at' => now()]);
+            }
 
+            // ----- Download audio to storage if not already linked -----
+            if (!empty($audioUrl)) {
+                $row = Episode::where($key)->first();
+                if ($row && empty($row->audio_path)) {
+                    try {
+                        $dl = $this->downloadAudioToStorage(
+                            url: $audioUrl,
+                            userId: $this->userId,
+                            title: $title,
+                            publishedAt: $pubAt
+                        );
+
+                        DB::table('episodes')
+                            ->where($key)
+                            ->update([
+                                'audio_path'  => $dl['path'],
+                                'audio_bytes' => $dl['bytes'],
+                                'updated_at'  => now(),
+                            ]);
+
+                        Log::info('[IMPORT] audio stored', [
+                            'user_id' => $this->userId,
+                            'title'   => $title,
+                            'path'    => $dl['path'],
+                            'bytes'   => $dl['bytes'],
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::warning('[IMPORT] audio download failed', [
+                            'user_id' => $this->userId,
+                            'title'   => $title,
+                            'url'     => $audioUrl,
+                            'error'   => $e->getMessage(),
+                        ]);
+                        // keep importing other items
+                    }
+                }
+            }
 
             Log::info('[IMPORT] upserted episode (all fields)', [
                 'user_id'      => $this->userId,
@@ -312,5 +347,88 @@ if ($enclosureUrl) {
             if (!empty($a['url'])) return (string)$a['url'];
         }
         return null;
+    }
+
+    /**
+     * Stream-download audio to storage and return ['path'=>string,'bytes'=>int,'mime'=>?string].
+     * Uses FILESYSTEM_DISK (or 'public') and writes under: episodes/{userId}/YYYY/MM/{filename}.{ext}
+     */
+    private function downloadAudioToStorage(string $url, int $userId, string $title, ?string $publishedAt): array
+    {
+        // temp file
+        $tmp = tmpfile();
+        if ($tmp === false) {
+            throw new \RuntimeException('Failed to create temporary file.');
+        }
+        $meta = stream_get_meta_data($tmp);
+        $tmpPath = $meta['uri'];
+
+        // stream to temp via sink
+        $req = Http::timeout(600)
+            ->withHeaders([
+                'User-Agent' => 'PodPowerImporter/1.0',
+                'Accept'     => 'audio/*, application/octet-stream, */*',
+            ])
+            ->sink($tmpPath)
+            ->get($url);
+
+        if (!$req->ok()) {
+            fclose($tmp);
+            throw new \RuntimeException('Download failed: HTTP '.$req->status());
+        }
+
+        $bytes = @filesize($tmpPath) ?: 0;
+        $mime  = $req->header('Content-Type');
+
+        // extension + filename
+        $ext  = $this->guessAudioExtension($mime, $url) ?? 'mp3';
+        $dateKey = $publishedAt ?: now()->format('Y-m-d H:i:s');
+        $dateForName = str_replace([' ', ':'], ['_', '-'], $dateKey);
+        $baseName = Str::slug($title) ?: 'episode';
+        $filename = "{$baseName}_{$dateForName}.{$ext}";
+
+        $ym = date('Y/m', $publishedAt ? strtotime($publishedAt) : time());
+        $relPath = "episodes/{$userId}/{$ym}/{$filename}";
+
+        $disk = config('filesystems.default', 'public');
+
+        // ensure dir and write
+        $dir = dirname($relPath);
+        if (!Storage::disk($disk)->exists($dir)) {
+            Storage::disk($disk)->makeDirectory($dir);
+        }
+        rewind($tmp);
+        $ok = Storage::disk($disk)->put($relPath, $tmp); // stream write
+        fclose($tmp);
+
+        if (!$ok) {
+            throw new \RuntimeException('Failed to write audio to storage.');
+        }
+
+        return ['path' => $relPath, 'bytes' => $bytes, 'mime' => $mime ?: null];
+    }
+
+    /** Map common audio MIME types to extensions; fall back to URL path. */
+    private function guessAudioExtension(?string $mime, string $url): ?string
+    {
+        $map = [
+            'audio/mpeg'  => 'mp3',
+            'audio/mp3'   => 'mp3',
+            'audio/mp4'   => 'm4a',
+            'audio/x-m4a' => 'm4a',
+            'audio/aac'   => 'aac',
+            'audio/wav'   => 'wav',
+            'audio/x-wav' => 'wav',
+            'audio/ogg'   => 'ogg',
+            'audio/opus'  => 'opus',
+            'audio/webm'  => 'webm',
+            'application/octet-stream' => null,
+        ];
+        if ($mime && isset($map[$mime])) {
+            return $map[$mime] ?: null;
+        }
+        $path = parse_url($url, PHP_URL_PATH);
+        $ext  = $path ? strtolower((string) pathinfo($path, PATHINFO_EXTENSION)) : null;
+        return in_array($ext, ['mp3','m4a','aac','wav','ogg','opus','webm'], true) ? $ext : null;
     }
 }

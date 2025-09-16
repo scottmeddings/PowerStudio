@@ -69,7 +69,9 @@ Route::get('/podcast', function () {
     return view('site.templates.'.$s['template'], ['settings'=>$s]);
 });
 
-Route::get('/feed.xml', [PodcastFeedController::class, 'index'])->name('feed.canonical');
+
+Route::get('/feed.xml', [\App\Http\Controllers\PodcastFeedController::class, 'index'])
+     ->name('feed.xml');
 
 // e.g. /podpower/feed.xml
 Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
@@ -181,7 +183,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/debug/dispatch-import', function () {
         Log::info('DEBUG: /debug/dispatch-import called');
         dispatch(new \App\Jobs\ImportRssFeedJob(
-            request('url', 'https://podcast.powertime.au/feed.xml'),
+            request('url', ''),
             false,
             optional(auth()->user())->id
         ))->onQueue('default');

@@ -16,7 +16,7 @@ class RssImportController extends Controller
     /** GET /settings/import */
     public function show(Request $request)
     {
-        $import_feed_url = old('import_feed_url', config('app.feed_url', 'https://podcast.powertime.au/feed.xml'));
+        $import_feed_url = old('import_feed_url', config('app.feed_url', ''));
         $started = (bool) session('rss_import_started', false);
 
         return view('settings.import', compact('import_feed_url', 'started'));
