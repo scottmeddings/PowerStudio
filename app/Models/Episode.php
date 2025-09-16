@@ -12,21 +12,11 @@ class Episode extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'user_id',
-        'title',
-        'slug',
-        'description',
-        'audio_url',
-        'duration_seconds',
-        'status',
-        'published_at',
-        'cover_path',
-        'cover_url',
-         'ai_status', 
-         'ai_progress', 
-         'ai_message',
-    ];
+   
+    protected $guarded = [];
+
+    // app/Models/Episode.php
+
 
     protected $casts = [
         'published_at'     => 'datetime',
@@ -39,13 +29,16 @@ class Episode extends Model
     {
         return $this->belongsTo(User::class);
     }
-    
-    public function scopePublishedWithAudio($q)
+     public function downloads()
     {
-        return $q->where('status', 'published')
-                 ->where(function($q){
-                     $q->whereNotNull('audio_url')->orWhereNotNull('audio_path');
-                 });
+        return $this->hasMany(\App\Models\Download::class);
+    }
+
+    // Optional convenience so you can use $episode->plays anywhere
+    public function getPlaysAttribute()
+    {
+        // prefer eager count if present; otherwise query
+        return $this->downloads_count ?? $this->downloads()->count();
     }
 
     // Always returns a usable URL (CDN if set, else storage/public URL, else raw path if already absolute)

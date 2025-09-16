@@ -27,10 +27,14 @@ use App\Http\Controllers\WebsiteController;
 use App\Http\Controllers\PublicSiteController;  
 use App\Http\Controllers\StatisticsController; 
 use App\Http\Controllers\SiteController;   
- use App\Http\Controllers\Settings\ImportController;
 use App\Http\Controllers\FeedAliasController; 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Settings\RssImportController;
+use App\Jobs\QueueHealthcheckJob;
+
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -167,6 +171,12 @@ Route::middleware('auth')->group(function () {
         return 'ok';
     })->name('debug.progress.write');
 
+    Route::get('/dev/qhc', function () {
+        \Log::info('[QHC] dispatching');
+        QueueHealthcheckJob::dispatch()->onQueue('default');
+        return 'ok';
+    })->middleware(['web','auth']);
+
     // B) Dispatch the Import job directly (bypass Blade/controller)
     Route::get('/debug/dispatch-import', function () {
         Log::info('DEBUG: /debug/dispatch-import called');
@@ -186,11 +196,15 @@ Route::middleware('auth')->group(function () {
     })->name('debug.status.read');
 
 
+    
     Route::middleware(['web','auth'])->group(function () {
-        Route::get('/settings/import',  [ImportController::class,'show'])->name('settings.import.show');
-        Route::post('/settings/import', [ImportController::class,'handle'])->name('settings.import.handle');
-        Route::get('/settings/import/status', [ImportController::class,'status'])->name('settings.import.status');
+        Route::get('/settings/import',        [RssImportController::class, 'show'])->name('settings.import');
+        Route::post('/settings/import',       [RssImportController::class, 'handle'])->name('settings.import.handle');
+        Route::get('/settings/import/status', [RssImportController::class, 'status'])->name('settings.import.status');
     });
+
+
+    
         // Podcasting 2.0 (only if you have the controller)
     // Route::get('/episodes/{episode}/chapters.json', [EpisodeChaptersJsonController::class, 'show'])
     //     ->name('episodes.chapters.json');
@@ -214,8 +228,16 @@ Route::middleware('auth')->group(function () {
     Route::delete('/episodes/{episode}',    [EpisodeController::class, 'destroy'])
         ->middleware('can:delete,episode')->name('episodes.destroy');
 
-        
+    Route::get('/episodes/{episode}/download', [EpisodeController::class, 'download'])
+    ->name('episodes.download');
+    // routes/web.php
+    Route::patch('/episodes/{episode}/plays', [\App\Http\Controllers\EpisodeController::class, 'setPlays'])
+        ->name('episodes.plays.set');
+    Route::put('/episodes/{episode}/plays', [\App\Http\Controllers\EpisodeController::class, 'setPlays'])
+    ->name('episodes.plays.set');
 
+    Route::get('/episodes', [EpisodeController::class, 'index'])->name('episodes');
+    
     // Publish / Unpublish
     Route::patch('/episodes/{episode}/publish',   [EpisodeController::class, 'publish'])->name('episodes.publish');
     Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
@@ -354,14 +376,15 @@ Route::middleware('auth')->group(function () {
             Route::post('/plugins', [SettingsController::class, 'updatePlugins'])->name('plugins.update');
 
             // Import
-            Route::get ('/import', [SettingsController::class, 'import'])->name('import');
-            Route::post('/import', [SettingsController::class, 'handleImport'])->name('import.handle');
+            //Route::get ('/import', [SettingsController::class, 'import'])->name('import');
+            //Route::post('/import', [SettingsController::class, 'handleImport'])->name('import.handle');
         });
 
     /*
     |--------------------------------------------------------------------------
     | Comments
     |--------------------------------------------------------------------------
+
     */
     Route::post('/episodes/{episode}/comments', [CommentController::class, 'store'])
         ->middleware(['auth','throttle:20,1'])

@@ -12,10 +12,10 @@
 
   /* Title cell: truncate long titles, keep comments snug */
   .title-cell{ display:flex; align-items:center; gap:.5rem; min-width:0; }
-  .title-text{ min-width:0; max-width: 58ch; } /* keeps one line wide but not full row */
+  .title-text{ min-width:0; max-width: 58ch; }
   .title-text .text-truncate{ display:block; }
   @media (min-width: 1400px){
-    .title-text{ max-width: 72ch; } /* a bit wider on xl+ */
+    .title-text{ max-width: 72ch; }
   }
 
   /* Badges, meta */
@@ -23,17 +23,18 @@
   .badge-comments{ background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
   .meta-muted{ color:#6b7280; font-size:.86rem; }
 
-  /* Action buttons: keep on one line, consistent spacing */
+  /* Numbers: right-aligned, tabular digits */
+  .num{ text-align:right; font-variant-numeric: tabular-nums; }
+
+  /* Action buttons */
   .actions{ display:flex; justify-content:flex-end; gap:.35rem; flex-wrap:nowrap; white-space:nowrap; }
   .actions form{ display:inline-block; margin:0; }
   .btn-xs{
     --bs-btn-padding-y:.30rem; --bs-btn-padding-x:.62rem; --bs-btn-font-size:.80rem; line-height:1.15;
   }
 
-  /* Keep action column wide enough so buttons don’t wrap */
-  th.actions, td.actions{ width: 330px; } /* tune if you add/remove buttons */
+  th.actions, td.actions{ width: 330px; }
 
-  /* Mobile: icon-only to save space */
   @media (max-width: 576px){
     .btn-label { display:none; }
     th.published, td.published{ display:none; }
@@ -64,14 +65,24 @@
       <table class="table table-episodes align-middle">
         <thead class="table-light">
           <tr class="text-secondary">
-            <th style="width:52%">Title</th>
+            <th style="width:48%">Title</th>
             <th style="width:12%">Status</th>
+            <th class="plays" style="width:10%; text-align:right;">Plays</th>
             <th class="published" style="width:16%">Published</th>
             <th class="actions text-end">Actions</th>
           </tr>
         </thead>
 
         <tbody>
+        @php
+          // tiny helper for compact numbers
+          $shortNum = function($n){
+            if ($n >= 1000000) return rtrim(rtrim(number_format($n/1000000, 1), '0'), '.').'M';
+            if ($n >= 1000)    return rtrim(rtrim(number_format($n/1000, 1), '0'), '.').'k';
+            return number_format($n);
+          };
+        @endphp
+
         @forelse($episodes as $ep)
           <tr>
             {{-- Title + comments --}}
@@ -101,6 +112,18 @@
               <span class="badge text-bg-{{ $bg }} badge-compact">{{ ucfirst($status) }}</span>
             </td>
 
+            {{-- Plays (sum of rows in "downloads") --}}
+          @php
+                $plays = isset($ep->downloads_count)
+                    ? (int) $ep->downloads_count
+                    : (int) \Illuminate\Support\Facades\DB::table('downloads')
+                          ->where('episode_id', $ep->id)->count();
+            @endphp
+            <td class="num" title="{{ number_format($plays) }} plays">
+              {{ $shortNum($plays) }}
+            </td>
+
+
             {{-- Published --}}
             <td class="published meta-muted">
               @if($ep->published_at)
@@ -117,8 +140,6 @@
 
             {{-- Actions --}}
             <td class="actions text-end">
-             
-
               @can('update', $ep)
                 @if(strtolower($ep->status ?? 'draft') !== 'published')
                   {{-- Publish --}}
@@ -156,7 +177,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="4" class="text-center text-secondary py-4">No episodes yet.</td>
+            <td colspan="5" class="text-center text-secondary py-4">No episodes yet.</td>
           </tr>
         @endforelse
         </tbody>
@@ -164,8 +185,7 @@
     </div>
   </div>
 
-  
   <div class="mt-2">
-  {{ $episodes->withQueryString()->links('pagination::bootstrap-5') }}
-</div>
+    {{ $episodes->withQueryString()->links('pagination::bootstrap-5') }}
+  </div>
 @endsection

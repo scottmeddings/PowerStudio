@@ -8,7 +8,6 @@
 <style>
   .sticky-side { position: sticky; top: 82px; z-index: 5; }
   .cover-card  { border: 1px dashed rgba(0,0,0,.12); }
-  /* Keep modals above sticky UI/backdrop */
   .modal, .modal.fade .modal-dialog { z-index: 3001 !important; }
   .modal-backdrop, .modal-backdrop.show { z-index: 3000 !important; }
 </style>
@@ -65,42 +64,71 @@
             <small class="text-secondary d-block mt-1">If you also provide a URL, the uploaded file will be used.</small>
           </div>
           <div class="col-md-6">
-           @php
-              /** @var \App\Models\Episode $episode */
-              // Only use old() if there are errors (i.e., we just failed validation)
-              $audioUrl = $errors->any()
-                  ? old('audio_url', $episode->audio_url)
-                  : ($episode->audio_url ?? '');
+            @php
+              $audioUrl = $errors->any() ? old('audio_url', $episode->audio_url) : ($episode->audio_url ?? '');
             @endphp
-
             <label class="form-label">Audio URL</label>
             <input name="audio_url" type="url"
-                  class="form-control @error('audio_url') is-invalid @enderror"
-                  value="{{ $audioUrl }}">
+                   class="form-control @error('audio_url') is-invalid @enderror"
+                   value="{{ $audioUrl }}">
             @error('audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
-
           </div>
         </div>
 
-        {{-- Status / Duration / Publish At --}}
+        {{-- Status / Duration / Plays / Publish At --}}
         <div class="row g-3 mt-1">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Status</label>
-            {{-- IMPORTANT: id must be "statusField" so scripts can set it to "draft" --}}
             <select id="statusField" name="status" class="form-select @error('status') is-invalid @enderror">
               <option value="draft"     {{ $status === 'draft' ? 'selected' : '' }}>Draft</option>
               <option value="published" {{ $status === 'published' ? 'selected' : '' }}>Published</option>
             </select>
             @error('status') <div class="invalid-feedback">{{ $message }}</div> @enderror
           </div>
-          <div class="col-md-4">
+
+          <div class="col-md-3">
             <label class="form-label">Duration (sec)</label>
             <input name="duration_seconds" type="number" min="0"
                    class="form-control @error('duration_seconds') is-invalid @enderror"
                    value="{{ old('duration_seconds', $episode->duration_seconds) }}">
             @error('duration_seconds') <div class="invalid-feedback">{{ $message }}</div> @enderror
           </div>
-          <div class="col-md-4">
+
+          {{-- Plays (editable – derived from downloads table) --}}
+          <div class="col-md-3">
+            <label class="form-label">Plays</label>
+            @php
+              $currentPlays = (int) \Illuminate\Support\Facades\DB::table('downloads')
+                                ->where('episode_id', $episode->id)
+                                ->count();
+            @endphp
+
+            <small class="text-secondary d-block mb-1">
+              Current counted plays: <strong>{{ number_format($currentPlays) }}</strong>
+            </small>
+
+            <div class="d-flex gap-2 align-items-start">
+              <input
+                name="plays"
+                type="number"
+                min="0"
+                step="1"
+                class="form-control @error('plays') is-invalid @enderror"
+                value="{{ old('plays', $currentPlays) }}"
+                aria-label="Total plays (will be synced to downloads table)"
+                form="playsForm"
+              >
+              <button class="btn btn-outline-secondary" type="submit" form="playsForm">
+                Update
+              </button>
+            </div>
+
+            @error('plays')
+              <div class="invalid-feedback d-block">{{ $message }}</div>
+            @enderror
+          </div>
+
+          <div class="col-md-3">
             <label class="form-label">Publish At (optional)</label>
             <input name="published_at" type="datetime-local"
                    class="form-control @error('published_at') is-invalid @enderror"
@@ -127,8 +155,30 @@
       {{-- Cover --}}
       <div class="section-card p-3 cover-card text-center">
         <div class="mb-2 fw-semibold">Episode Cover</div>
-        @php $coverUrl = $episode->cover_image_url ?? 'https://placehold.co/480x480?text=Cover'; @endphp
-        <img id="coverPreview" src="{{ $coverUrl }}" alt="Cover" class="img-fluid rounded mb-2">
+        @php
+          $coverUrl = null;
+          try {
+            if (!empty($episode->cover_path)) {
+              $coverUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($episode->cover_path);
+            }
+            if (!$coverUrl && !empty($episode->cover_image_url)) {
+              $val = $episode->cover_image_url;
+              if (filter_var($val, FILTER_VALIDATE_URL)) {
+                $coverUrl = $val;
+              } else {
+                $coverUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($val);
+              }
+            }
+          } catch (\Throwable $e) { /* ignore */ }
+          if (!$coverUrl) $coverUrl = asset('images/podcast-cover.jpg');
+          $placeholder = 'https://placehold.co/480x480?text=Cover';
+        @endphp
+
+        <img id="coverPreview"
+             src="{{ $coverUrl }}"
+             alt="Cover"
+             class="img-fluid rounded mb-2"
+             onerror="this.onerror=null;this.src='{{ $placeholder }}';">
 
         <form method="POST" action="{{ route('episodes.cover.upload', $episode) }}" enctype="multipart/form-data" class="d-grid gap-2">
           @csrf @method('PATCH')
@@ -149,7 +199,7 @@
         <div class="text-secondary small mt-2">Between 1400 and 2048px square (jpg or png).</div>
       </div>
 
-      {{-- Actions under cover --}}
+      {{-- Actions --}}
       <div class="section-card p-3 mt-3">
         <h6 class="mb-3">Actions</h6>
         <div class="d-grid gap-2">
@@ -171,15 +221,7 @@
             <i class="bi bi-text-paragraph me-1"></i>Edit transcript
           </button>
 
-          {{-- Actions (replace the old Cancel line with the two below) --}}
-          <button id="aiCancelBtn" type="button" class="btn btn-outline-secondary d-none">
-            Cancel enhance
-          </button>
-          <a id="navCancelBtn" class="btn btn-outline-secondary" href="{{ route('episodes') }}">
-              Cancel
-          </a>
-
-          
+          <a id="navCancelBtn" class="btn btn-outline-secondary" href="{{ route('episodes') }}">Cancel</a>
           <button id="deleteEpisodeBtn" type="button" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete</button>
         </div>
       </div>
@@ -187,28 +229,27 @@
   </div>
 </div>
 
-{{-- Helper forms (outside main form) --}}
+{{-- Helper forms --}}
 <form id="publishForm"   method="POST" action="{{ route('episodes.publish', $episode) }}"   class="d-none">@csrf @method('PATCH')</form>
 <form id="unpublishForm" method="POST" action="{{ route('episodes.unpublish', $episode) }}" class="d-none">@csrf @method('PATCH')</form>
 <form id="deleteEpisodeForm" method="POST" action="{{ route('episodes.destroy', $episode) }}" class="d-none">@csrf @method('DELETE')</form>
 <form id="aiEnhanceForm"   method="POST" action="{{ route('episodes.ai.enhance', $episode) }}" class="d-none">@csrf</form>
 
-{{-- Modals --}}
-@includeIf('episodes._modal_chapters')
-@includeIf('episodes._modal_transcript')
+{{-- Hidden form for plays (PUT to match your route) --}}
+<form id="playsForm" method="POST" action="{{ route('episodes.plays.set', $episode) }}" class="d-none">
+  @csrf
+  @method('PUT')
+</form>
 
 {{-- AI progress (start + poll) --}}
 <script>
-  
 (function () {
-  const aiBtn    = document.getElementById('aiEnhanceBtn');
-  const wrap     = document.getElementById('uploadProgressWrap');
-  const bar      = document.getElementById('uploadProgressBar');
-  const label    = document.getElementById('uploadProgressLabel');
+  const aiBtn = document.getElementById('aiEnhanceBtn');
+  const wrap  = document.getElementById('uploadProgressWrap');
+  const bar   = document.getElementById('uploadProgressBar');
+  const label = document.getElementById('uploadProgressLabel');
   const startUrl = @json(route('episodes.ai.enhance', $episode));
   const pollUrl  = @json(route('episodes.ai.progress', $episode));
-  const cancelUrl= @json(route('episodes.ai.cancel',   $episode)); // <-- add this
-
 
   function setBar(pct, text, danger=false) {
     wrap.classList.remove('d-none');
@@ -238,15 +279,12 @@
         aiBtn.disabled = false;
         aiBtn.innerHTML = '<i class="bi bi-stars me-1"></i>Enhance with AI';
       }
-    } catch (e) {
-      // swallow transient poll errors
-    }
+    } catch (_) { /* ignore */ }
   }
 
   aiBtn?.addEventListener('click', async () => {
     aiBtn.disabled = true;
     aiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enhancing…';
-
     setBar(1, 'Queuing AI job…');
 
     const token = document.querySelector('#aiEnhanceForm input[name=_token]')?.value
@@ -267,10 +305,8 @@
         const body = await res.text();
         throw new Error(body || ('HTTP ' + res.status));
       }
-
-      // begin polling
       pollTimer = setInterval(poll, 1500);
-      poll(); // immediate first poll
+      poll();
     } catch (err) {
       setBar(0, 'Failed to start AI: ' + (err?.message || err), true);
       aiBtn.disabled = false;
@@ -280,18 +316,6 @@
 })();
 </script>
 
-{{-- Ensure modals render on top (append to body) --}}
-<script>
-  ['chaptersModal','transcriptModal'].forEach(function(id){
-    var el=document.getElementById(id);
-    if(!el) return;
-    el.addEventListener('show.bs.modal', function(){
-      if(el.parentElement!==document.body) document.body.appendChild(el);
-    });
-    if(el.parentElement!==document.body) document.body.appendChild(el);
-  });
-</script>
-
 {{-- XHR upload progress for Save / Draft --}}
 <script>
 (function(){
@@ -299,9 +323,6 @@
   const status = document.getElementById('statusField');
   const save   = document.getElementById('updateBtn');
   const draft  = document.getElementById('saveDraftBtn');
-  const aiBtn       = document.getElementById('aiEnhanceBtn');
-  const aiCancelBtn = document.getElementById('aiCancelBtn');
-  const navCancel   = document.getElementById('navCancelBtn');
   const wrap   = document.getElementById('uploadProgressWrap');
   const bar    = document.getElementById('uploadProgressBar');
   const label  = document.getElementById('uploadProgressLabel');
@@ -332,10 +353,8 @@
 })();
 </script>
 
-{{-- Publish / Unpublish / Delete (NO AI handler here) + cover preview --}}
+{{-- Publish / Unpublish / Delete + cover preview --}}
 <script>
-
-  
   document.getElementById('publishNowBtn')?.addEventListener('click', () =>
     document.getElementById('publishForm')?.submit()
   );
@@ -349,8 +368,8 @@
   });
 
   document.getElementById('coverInput')?.addEventListener('change', (e)=>{
-    const f=e.target.files && e.target.files[0];
-    if(f) document.getElementById('coverPreview').src = URL.createObjectURL(f);
+    const f = e.target.files && e.target.files[0];
+    if (f) document.getElementById('coverPreview').src = URL.createObjectURL(f);
   });
 </script>
 @endsection

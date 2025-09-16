@@ -8,216 +8,309 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Cache;   // ✅ add this
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-
 use Throwable;
 
 class ImportRssFeedJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /** Progress key shared with controller */
     private const PROGRESS_KEY = 'rss_import:progress';
-
-    public function __construct(
-        public string $feedUrl,
-        public bool   $set301 = false,
-        public ?int   $userId = null,
-    ) {}
 
     public int $timeout = 600;
     public int $tries   = 1;
 
+    public function __construct(
+        public string $feedUrl,
+        public bool   $set301 = false,
+        public ?int   $userId = null
+    ) {
+        $this->onQueue('default');
+    }
+
     public function handle(): void
     {
-        // require a concrete owner id
-        $ownerId = (int) ($this->userId ?? 0);
-        if ($ownerId <= 0) {
-            $this->progress('failed: no authenticated user id', 100);
-            throw new \RuntimeException('No authenticated user id provided to ImportRssFeedJob');
+        if (!$this->userId) {
+            throw new \RuntimeException('episodes.user_id is required.');
         }
 
-        Log::info('ImportRssFeedJob boot', [
-            'url'   => $this->feedUrl,
-            'store' => config('podpower.rss_progress_store', 'file'),
-            'user'  => $ownerId,
-        ]);
-        $this->progress('Starting import…', 2);
+        $this->progress(3, 'Fetching feed…');
 
-        $resp = Http::timeout(60)->get($this->feedUrl);
-        if (!$resp->ok()) throw new \RuntimeException("Feed request failed ({$resp->status()})");
+        $resp = Http::timeout(30)->get($this->feedUrl);
+        if (!$resp->ok()) {
+            throw new \RuntimeException('Feed fetch failed: HTTP '.$resp->status());
+        }
 
-        $this->progress('Fetched feed…', 5);
+        $xml = @simplexml_load_string($resp->body());
+        if (!$xml) {
+            throw new \RuntimeException('Invalid RSS/Atom XML.');
+        }
 
-        $xml = @simplexml_load_string($resp->body(), 'SimpleXMLElement', LIBXML_NOCDATA);
-        if (!$xml) throw new \RuntimeException('Invalid RSS XML');
+        // Collect items (RSS <item> or Atom <entry>)
+        $items = [];
+        if (isset($xml->channel->item)) {
+            foreach ($xml->channel->item as $i) $items[] = $i;
+        } elseif (isset($xml->entry)) {
+            foreach ($xml->entry as $e) $items[] = $e;
+        }
 
-        $channel = $xml->channel ?: $xml;
-        $items   = $channel->item ?: $xml->entry;
-        $total   = count($items) ?: 1;
-        $count   = 0;
+        $total = max(1, count($items));
+        $done  = 0;
+        $this->progress(8, 'Parsing feed items… ('.$total.')');
 
         foreach ($items as $item) {
-            $count++;
+            $done++;
 
-            $guid    = (string)($item->guid ?? $item->id ?? '');
-            $title   = trim((string)$item->title) ?: 'Untitled';
-            $desc    = trim((string)$item->description ?: (string)$item->summary);
-            $pubDate = (string)$item->pubDate ?: (string)$item->published ?: (string)$item->updated;
+            // ----- Core fields -----
+            $title = trim((string)($item->title ?? '')) ?: 'Untitled';
+            $desc  = trim((string)($item->description ?? $item->summary ?? ''));
 
-            // enclosure
-            $encAttr  = $item->enclosure ? $item->enclosure->attributes() : null;
-            $audioUrl = (string)($encAttr['url'] ?? '');
-            if (!$audioUrl && isset($item->link)) {
-                foreach ($item->link as $linkEl) {
-                    $attrs = $linkEl->attributes();
-                    if (isset($attrs['rel']) && (string)$attrs['rel'] === 'enclosure') {
-                        $audioUrl = (string)($attrs['href'] ?? '');
-                        if ($audioUrl) break;
+            $pub   = (string)($item->pubDate ?? $item->updated ?? $item->published ?? '');
+            $pubAt = $this->parseDate($pub); // 'Y-m-d H:i:s' or null (allowed)
+
+            // enclosure (audio) + bytes if advertised
+            $enclosureUrl  = '';
+            $enclosureSize = null;
+            if (isset($item->enclosure)) {
+                $attrs = $item->enclosure->attributes();
+                $enclosureUrl = (string)($attrs['url'] ?? '');
+                $len          = (string)($attrs['length'] ?? '');
+                $enclosureSize = is_numeric($len) ? (int)$len : null;
+            } else {
+                foreach ($item->link ?? [] as $lnk) {
+                    $attr = $lnk->attributes();
+                    if ((string)($attr['rel'] ?? '') === 'enclosure') {
+                        $enclosureUrl = (string)($attr['href'] ?? '');
+                        $len          = (string)($attr['length'] ?? '');
+                        $enclosureSize = is_numeric($len) ? (int)$len : null;
+                        break;
                     }
                 }
             }
 
-            // image
-            $itunes   = $item->children('http://www.itunes.com/dtds/podcast-1.0.dtd');
-            $imageUrl = (string)($itunes->image['href'] ?? '');
-            if (!$imageUrl && isset($item->image->url)) $imageUrl = (string)$item->image->url;
-
-            // idempotency key
-            $externalId = $guid ?: $audioUrl;
-            if (!$externalId) {
-                $this->progress("Skipped (no guid/audio): {$title}", $this->pct($count, $total));
+            if ($title === '' && $enclosureUrl === '') {
+                Log::warning('Skipping item with no title & no enclosure');
+                $this->tick($done, $total, 'Skipping an empty item…');
                 continue;
             }
 
-            $ep = Episode::query()->where('guid', $externalId)->first() ?? new Episode();
+            // ----- Namespaces -----
+            $itunes  = $item->children('http://www.itunes.com/dtds/podcast-1.0.dtd');
+            $media   = $item->children('http://search.yahoo.com/mrss/');
+            $pi      = $item->children('https://podcastindex.org/namespace/1.0');
 
-            // owner — MUST be set for NOT NULL user_id
-            $ep->user_id = $ep->user_id ?? $ownerId;
+            // iTunes fields
+            $durRaw          = (string)($itunes->duration ?? '');
+            $durationSeconds = $this->parseItunesDuration($durRaw);
+            $epNum           = $this->toIntOrNull((string)($itunes->episode ?? ''));
+            $season          = $this->toIntOrNull((string)($itunes->season ?? ''));
+            $epType          = (string)($itunes->episodeType ?? ''); // full|bonus|trailer
+            $explicitStr     = strtolower(trim((string)($itunes->explicit ?? '')));
+            $explicitFlag    = in_array($explicitStr, ['yes','true','explicit','1'], true) ? 1 : 0;
 
-            // fields
-            $ep->guid        = $externalId;
-            $ep->title       = $title;
-            $ep->description = $desc ?: $ep->description;
-            $ep->status      = $ep->status ?? 'published';
+            // Images
+            $imageUrl = $this->pickImageUrl($item, $itunes, $media);
 
-            if (empty($ep->slug)) {
-                $ep->slug = Str::slug(Str::limit($title, 60, '')) . '-' . Str::lower(Str::random(6));
-            }
-
-            // audio download
-            if ($audioUrl) {
-                [$audioPath, $audioPublic] = $this->downloadToPublic($audioUrl, "episodes/{$ep->slug}", 'audio');
-                if ($audioPath) {
-                    $ep->audio_path = $audioPath;
-                    $ep->audio_url  = $audioPublic;
-                } else {
-                    $ep->audio_url ??= $audioUrl;
+            // PodcastIndex
+            $transcriptUrl = null;
+            $chaptersUrl   = null;
+            if ($pi) {
+                if (isset($pi->transcript)) {
+                    $a = $pi->transcript->attributes();
+                    $transcriptUrl = (string)($a['url'] ?? null);
+                }
+                if (isset($pi->chapters)) {
+                    $a = $pi->chapters->attributes();
+                    $chaptersUrl = (string)($a['url'] ?? null);
                 }
             }
 
-            // image download
-            if ($imageUrl) {
-                [$imgPath, $imgPublic] = $this->downloadToPublic($imageUrl, "episodes/{$ep->slug}", 'image');
-                if ($imgPath) {
-                    $ep->image_path = $imgPath;
-                    $ep->image_url  = $imgPublic;
-                }
-            }
+            // GUID/ID (for storage/reference only)
+            $guid = (string)($item->guid ?? $item->id ?? '');
 
-            if ($pubDate) {
-                try { $ep->published_at = \Carbon\Carbon::parse($pubDate); } catch (\Throwable) {}
-            }
+            // Derived
+            $slug = Str::slug($title);
 
-            // guard before save
-            if (!$ep->user_id) {
-                Log::error('Episode missing user_id; refusing to save', [
-                    'guid' => $externalId, 'title' => $title, 'jobUserId' => $ownerId,
-                ]);
-                throw new \RuntimeException('No user_id for episode row');
-            }
+            // ----- Preserve existing row values where appropriate -----
+   // Natural key
+$key = [
+    'user_id'      => $this->userId,
+    'title'        => $title,
+    'published_at' => $pubAt,
+];
 
-            $ep->save();
+// Might be null on first import
+$existing = \App\Models\Episode::query()->where($key)->first();
 
-            $this->progress("Imported: {$ep->title}", $this->pct($count, $total));
+// Preserve-or-default values (all null-safe now)
+$downloadsCount = $existing?->downloads_count ?? 0;
+$commentsCount  = $existing?->comments_count  ?? 0;
+
+$aiStatus   = $existing?->ai_status   ?? 'idle';
+$aiProgress = $existing?->ai_progress ?? 0;
+$aiMessage  = $existing?->ai_message  ?? null;
+
+$audioPath  = $existing?->audio_path  ?? null;
+$coverPath  = $existing?->cover_path  ?? null;
+$imagePath  = $existing?->image_path  ?? null;
+
+$chapters   = $existing?->chapters   ?? ($chaptersUrl   ?: null);
+$transcript = $existing?->transcript ?? ($transcriptUrl ?: null);
+
+$episodeNumber = $epNum ?? $existing?->episode_number ?? null;
+$episodeNo     = $epNum ?? $existing?->episode_no     ?? null;
+
+$durationSecCol  = $durationSeconds ?? $existing?->duration_sec     ?? null;
+$durationSecsCol = $durationSeconds ?? $existing?->duration_seconds ?? null;
+
+$status   = $existing?->status ?? 'published';
+$explicit = $existing?->explicit ?? $explicitFlag;
+$uuid     = $existing?->uuid ?? (string) \Illuminate\Support\Str::uuid();
+
+$audioUrl      = $existing?->audio_url ?: ($enclosureUrl ?: null);
+$imageUrlFinal = $imageUrl ?: ($existing?->image_url ?? null);
+
+// Write ALL columns (user_id always present in key)
+\Illuminate\Support\Facades\DB::table('episodes')->updateOrInsert(
+    $key,
+    [
+        'slug'              => $existing?->slug ?? $slug,
+        'description'       => $desc !== '' ? $desc : ($existing?->description ?? null),
+
+        'audio_url'         => $audioUrl,
+        'audio_bytes'       => $existing?->audio_bytes ?? $enclosureSize,
+        'audio_path'        => $audioPath,
+
+        'duration_seconds'  => $durationSecsCol,
+        'duration_sec'      => $durationSecCol,
+
+        'status'            => $status,
+        'downloads_count'   => $downloadsCount,
+        'comments_count'    => $commentsCount,
+
+        'episode_number'    => $episodeNumber,
+        'episode_type'      => $epType !== '' ? $epType : ($existing?->episode_type ?? 'full'),
+        'explicit'          => $explicit,
+        'season'            => $season ?? $existing?->season,
+        'episode_no'        => $episodeNo,
+
+        'image_url'         => $imageUrlFinal,
+        'image_path'        => $imagePath,
+        'cover_path'        => $coverPath,
+
+        'chapters'          => $chapters,
+        'transcript'        => $transcript,
+
+        'ai_status'         => $aiStatus,
+        'ai_progress'       => $aiProgress,
+        'ai_message'        => $aiMessage,
+
+        'uuid'              => $uuid,
+        'guid'              => $guid !== '' ? $guid : ($existing?->guid ?? null),
+
+        'created_at'        => $existing?->created_at ?? now(),
+        'updated_at'        => now(),
+    ]
+);
+
+// If enclosure appeared and DB had null audio_url, ensure it’s set
+if ($enclosureUrl) {
+    \App\Models\Episode::where($key)
+        ->whereNull('audio_url')
+        ->update(['audio_url' => $enclosureUrl, 'updated_at' => now()]);
+}
+
+
+            Log::info('[IMPORT] upserted episode (all fields)', [
+                'user_id'      => $this->userId,
+                'title'        => $title,
+                'published_at' => $pubAt,
+            ]);
+
+            $this->tick($done, $total, 'Imported: '.$title);
         }
 
-        $this->progress("Done: imported {$count} item(s).", 100);
+        $this->progress(100, 'Import complete ✔');
     }
 
     public function failed(Throwable $e): void
     {
-        Log::error('ImportRssFeedJob failed', ['url' => $this->feedUrl, 'error' => $e->getMessage()]);
-        $this->progress('failed: '.$e->getMessage(), 100);
+        Log::error('ImportRssFeedJob failed', [
+            'feed' => $this->feedUrl,
+            'err'  => $e->getMessage(),
+        ]);
+
+        $this->progress(100, 'Failed: '.$e->getMessage());
     }
 
-    private function pct(int $i, int $n): int
+    /* ----------------- helpers ----------------- */
+
+    private function progress(?int $percent, string $message): void
     {
-        return (int) floor($i / max(1, $n) * 100);
+        $current = Cache::get(self::PROGRESS_KEY, ['percent'=>0,'message'=>'…']);
+        if ($percent === null) $percent = (int) ($current['percent'] ?? 0);
+        Cache::put(self::PROGRESS_KEY, [
+            'percent' => max(0, min(100, $percent)),
+            'message' => $message,
+            'meta'    => ['feed' => $this->feedUrl, 'user_id' => $this->userId],
+        ], now()->addHour());
     }
 
-    /** ✅ progress helpers (were missing) */
-   
-
-    private function progress(string $msg, int $pct): void
-{
-    $pct = max(0, min(100, $pct));
-    $this->progressStore()->put(self::PROGRESS_KEY, [
-        'message'    => $msg,
-        'percent'    => $pct,
-        'started_at' => now()->toIso8601String(),
-    ], now()->addMinutes(30));
-}
-
-private function progressStore()
-{
-    return Cache::store(config('podpower.rss_progress_store', 'file'));
-}
-
-    private function downloadToPublic(string $url, string $baseDir, string $basename): array
+    private function tick(int $done, int $total, string $message): void
     {
+        $base  = 10;
+        $range = 88;
+        $pct   = $base + (int) floor($range * ($done / max(1,$total)));
+        $this->progress($pct, $message);
+    }
+
+    private function parseDate(?string $str): ?string
+    {
+        if (!$str) return null;
         try {
-            $response = Http::timeout(120)->withOptions(['stream' => true])->get($url);
-            if (!$response->ok()) return [null, null];
-
-            $ext      = $this->guessExtension($url, $response->header('content-type'));
-            $filename = "{$basename}.{$ext}";
-            $path     = trim($baseDir, '/')."/{$filename}";
-
-            $disk = Storage::disk('public');
-            $dir  = dirname($path);
-            if (!$disk->exists($dir)) $disk->makeDirectory($dir);
-
-            $stream = $response->toPsrResponse()->getBody();
-            $disk->put($path, $stream);
-
-            return [$path, $disk->url($path)];
-        } catch (Throwable $e) {
-            Log::warning('Download failed', ['url' => $url, 'error' => $e->getMessage()]);
-            return [null, null];
+            return date('Y-m-d H:i:s', strtotime($str));
+        } catch (\Throwable) {
+            return null;
         }
     }
 
-    private function guessExtension(string $url, ?string $contentType): string
+    private function parseItunesDuration(?string $s): ?int
     {
-        $fromUrl = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION));
-        if ($fromUrl) return $fromUrl;
+        if (!$s) return null;
+        $s = trim($s);
+        if ($s === '') return null;
+        if (ctype_digit($s)) return (int)$s;              // seconds
+        $parts = array_map('intval', explode(':', $s));   // HH:MM:SS or MM:SS
+        if (count($parts) === 3) return $parts[0]*3600 + $parts[1]*60 + $parts[2];
+        if (count($parts) === 2) return $parts[0]*60 + $parts[1];
+        return null;
+    }
 
-        $map = [
-            'audio/mpeg'  => 'mp3',
-            'audio/mp3'   => 'mp3',
-            'audio/x-m4a' => 'm4a',
-            'audio/mp4'   => 'm4a',
-            'audio/aac'   => 'aac',
-            'image/jpeg'  => 'jpg',
-            'image/jpg'   => 'jpg',
-            'image/png'   => 'png',
-            'image/webp'  => 'webp',
-        ];
-        return $map[strtolower((string)$contentType)] ?? 'bin';
+    private function toIntOrNull(?string $s): ?int
+    {
+        if ($s === null) return null;
+        $s = trim($s);
+        return ($s !== '' && is_numeric($s)) ? (int)$s : null;
+    }
+
+    private function pickImageUrl($item, $itunes, $media = null): ?string
+    {
+        if ($itunes && isset($itunes->image)) {
+            $a = $itunes->image->attributes();
+            if (!empty($a['href'])) return (string)$a['href'];
+        }
+        if ($media && isset($media->thumbnail)) {
+            $a = $media->thumbnail->attributes();
+            if (!empty($a['url'])) return (string)$a['url'];
+        }
+        if ($media && isset($media->content)) {
+            $a = $media->content->attributes();
+            if (!empty($a['url'])) return (string)$a['url'];
+        }
+        return null;
     }
 }
