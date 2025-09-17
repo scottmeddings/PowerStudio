@@ -12,8 +12,11 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage; // ⬅️ storage
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use App\Models\SiteSetting;
 use Throwable;
 
 class ImportRssFeedJob implements ShouldQueue
@@ -51,7 +54,18 @@ class ImportRssFeedJob implements ShouldQueue
             throw new \RuntimeException('Invalid RSS/Atom XML.');
         }
 
-        // Collect items (RSS <item> or Atom <entry>)
+        // Update podcast title/description in settings
+        $feedTitle = (string)($xml->channel->title ?? $xml->title ?? '');
+        $feedDesc  = (string)($xml->channel->description ?? $xml->subtitle ?? $xml->description ?? '');
+        if ($feedTitle !== '' || $feedDesc !== '') {
+            $this->updatePodcastSettings($this->userId, $feedTitle, $feedDesc);
+        }
+
+        // ⬇️ Fetch user's cover once; reuse for all episodes
+        $userCoverPath = DB::table('users')->where('id', $this->userId)->value('cover_path');
+        $userCoverUrl  = $userCoverPath ? $this->publicUrlFor($userCoverPath) : null;
+
+        // Items
         $items = [];
         if (isset($xml->channel->item)) {
             foreach ($xml->channel->item as $i) $items[] = $i;
@@ -71,7 +85,7 @@ class ImportRssFeedJob implements ShouldQueue
             $desc  = trim((string)($item->description ?? $item->summary ?? ''));
 
             $pub   = (string)($item->pubDate ?? $item->updated ?? $item->published ?? '');
-            $pubAt = $this->parseDate($pub); // 'Y-m-d H:i:s' or null (allowed)
+            $pubAt = $this->parseDate($pub);
 
             // enclosure (audio) + bytes if advertised
             $enclosureUrl  = '';
@@ -113,10 +127,7 @@ class ImportRssFeedJob implements ShouldQueue
             $explicitStr     = strtolower(trim((string)($itunes->explicit ?? '')));
             $explicitFlag    = in_array($explicitStr, ['yes','true','explicit','1'], true) ? 1 : 0;
 
-            // Images
-            $imageUrl = $this->pickImageUrl($item, $itunes, $media);
-
-            // PodcastIndex
+            // PodcastIndex (transcript/chapters)
             $transcriptUrl = null;
             $chaptersUrl   = null;
             if ($pi) {
@@ -130,13 +141,10 @@ class ImportRssFeedJob implements ShouldQueue
                 }
             }
 
-            // GUID/ID (for storage/reference only)
             $guid = (string)($item->guid ?? $item->id ?? '');
-
-            // Derived
             $slug = Str::slug($title);
 
-            // ----- Preserve existing row values where appropriate -----
+            // Natural key (keeps user_id on first insert)
             $key = [
                 'user_id'      => $this->userId,
                 'title'        => $title,
@@ -153,15 +161,16 @@ class ImportRssFeedJob implements ShouldQueue
             $aiMessage  = $existing?->ai_message  ?? null;
 
             $audioPath  = $existing?->audio_path  ?? null;
-            $coverPath  = $existing?->cover_path  ?? null;
+
+            // Keep any episode-specific image_path if already set.
             $imagePath  = $existing?->image_path  ?? null;
 
+            // Seed chapters/transcript with feed links if DB empty (will be replaced when downloaded)
             $chapters   = $existing?->chapters   ?? ($chaptersUrl   ?: null);
             $transcript = $existing?->transcript ?? ($transcriptUrl ?: null);
 
-            $episodeNumber = $epNum ?? $existing?->episode_number ?? null;
-            $episodeNo     = $epNum ?? $existing?->episode_no     ?? null;
-
+            $episodeNumber   = $epNum ?? $existing?->episode_number ?? null;
+            $episodeNo       = $epNum ?? $existing?->episode_no     ?? null;
             $durationSecCol  = $durationSeconds ?? $existing?->duration_sec     ?? null;
             $durationSecsCol = $durationSeconds ?? $existing?->duration_seconds ?? null;
 
@@ -169,10 +178,15 @@ class ImportRssFeedJob implements ShouldQueue
             $explicit = $existing?->explicit ?? $explicitFlag;
             $uuid     = $existing?->uuid ?? (string) Str::uuid();
 
-            $audioUrl      = $existing?->audio_url ?: ($enclosureUrl ?: null);
-            $imageUrlFinal = $imageUrl ?: ($existing?->image_url ?? null);
+            $audioUrl = $existing?->audio_url ?: ($enclosureUrl ?: null);
 
-            // ----- UPSERT all fields (ensures user_id on first insert) -----
+            // ⬇️ Copy user's cover into episode fields (no download)
+            // - cover_path (DB raw path from users.cover_path)
+            // - image_url  (public URL for that path)
+            $coverPathToUse = $userCoverPath ?: ($existing?->cover_path ?? null);
+            $imageUrlFinal  = $userCoverUrl  ?: ($existing?->image_url ?? null);
+
+            // Upsert base fields
             DB::table('episodes')->updateOrInsert(
                 $key,
                 [
@@ -196,9 +210,10 @@ class ImportRssFeedJob implements ShouldQueue
                     'season'            => $season ?? $existing?->season,
                     'episode_no'        => $episodeNo,
 
+                    // ⬇️ set from user's cover
                     'image_url'         => $imageUrlFinal,
                     'image_path'        => $imagePath,
-                    'cover_path'        => $coverPath,
+                    'cover_path'        => $coverPathToUse,
 
                     'chapters'          => $chapters,
                     'transcript'        => $transcript,
@@ -208,6 +223,7 @@ class ImportRssFeedJob implements ShouldQueue
                     'ai_message'        => $aiMessage,
 
                     'uuid'              => $uuid,
+                    // temporary; we’ll rewrite after we know the row id/slug
                     'guid'              => $guid !== '' ? $guid : ($existing?->guid ?? null),
 
                     'created_at'        => $existing?->created_at ?? now(),
@@ -215,52 +231,87 @@ class ImportRssFeedJob implements ShouldQueue
                 ]
             );
 
-            // If enclosure appeared and DB had null audio_url, ensure it’s set
+            // If enclosure appeared and DB had null audio_url, seed it
             if ($enclosureUrl) {
                 Episode::where($key)
                     ->whereNull('audio_url')
                     ->update(['audio_url' => $enclosureUrl, 'updated_at' => now()]);
             }
 
-            // ----- Download audio to storage if not already linked -----
-            if (!empty($audioUrl)) {
-                $row = Episode::where($key)->first();
-                if ($row && empty($row->audio_path)) {
-                    try {
-                        $dl = $this->downloadAudioToStorage(
-                            url: $audioUrl,
-                            userId: $this->userId,
-                            title: $title,
-                            publishedAt: $pubAt
-                        );
+            // Reload (we need the id for URL building)
+            $row = Episode::where($key)->first();
 
-                        DB::table('episodes')
-                            ->where($key)
-                            ->update([
-                                'audio_path'  => $dl['path'],
-                                'audio_bytes' => $dl['bytes'],
-                                'updated_at'  => now(),
-                            ]);
+            // ---------- Download and relink: audio ----------
+            if ($row && empty($row->audio_path) && !empty($audioUrl)) {
+                try {
+                    $dl = $this->downloadAudioToStorage(
+                        url: $audioUrl,
+                        userId: $this->userId,
+                        title: $title,
+                        publishedAt: $pubAt
+                    );
 
-                        Log::info('[IMPORT] audio stored', [
-                            'user_id' => $this->userId,
-                            'title'   => $title,
-                            'path'    => $dl['path'],
-                            'bytes'   => $dl['bytes'],
+                    DB::table('episodes')
+                        ->where($key)
+                        ->update([
+                            'audio_path'  => $dl['path'],
+                            'audio_bytes' => $dl['bytes'],
+                            'audio_url'   => $dl['url'], // point to our site’s public URL
+                            'updated_at'  => now(),
                         ]);
-                    } catch (\Throwable $e) {
-                        Log::warning('[IMPORT] audio download failed', [
-                            'user_id' => $this->userId,
-                            'title'   => $title,
-                            'url'     => $audioUrl,
-                            'error'   => $e->getMessage(),
-                        ]);
-                        // keep importing other items
-                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[IMPORT] audio download failed', [
+                        'user_id' => $this->userId,
+                        'title'   => $title,
+                        'url'     => $audioUrl,
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+            } elseif ($row && !empty($row->audio_path)) {
+                // Ensure audio_url points to our local file URL
+                $localUrl = $this->publicUrlFor($row->audio_path);
+                if (empty($row->audio_url) || $this->isExternalUrl($row->audio_url)) {
+                    Episode::where($key)->update(['audio_url' => $localUrl, 'updated_at' => now()]);
                 }
             }
 
-            Log::info('[IMPORT] upserted episode (all fields)', [
+            // ---------- Download and relink: chapters (JSON) ----------
+            if ($row && !empty($chaptersUrl)) {
+                try {
+                    $chapRel = $this->relStoragePath($this->userId, $title, $pubAt, 'chapters.json');
+                    $chapUrl = $this->downloadToStorageReturnUrl($chaptersUrl, $chapRel);
+                    Episode::where($key)->update(['chapters' => $chapUrl, 'updated_at' => now()]);
+                } catch (\Throwable $e) {
+                    Log::warning('[IMPORT] chapters download failed', ['url' => $chaptersUrl, 'err' => $e->getMessage()]);
+                }
+            }
+
+            // ---------- Download and relink: transcript (VTT) ----------
+            if ($row && !empty($transcriptUrl)) {
+                try {
+                    $ext = strtolower(pathinfo(parse_url($transcriptUrl, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION));
+                    $ext = in_array($ext, ['vtt','srt','txt','json']) ? $ext : 'vtt';
+                    $trRel = $this->relStoragePath($this->userId, $title, $pubAt, "transcript.{$ext}");
+                    $trUrl = $this->downloadToStorageReturnUrl($transcriptUrl, $trRel);
+                    Episode::where($key)->update(['transcript' => $trUrl, 'updated_at' => now()]);
+                } catch (\Throwable $e) {
+                    Log::warning('[IMPORT] transcript download failed', ['url' => $transcriptUrl, 'err' => $e->getMessage()]);
+                }
+            }
+
+            // ---------- Canonical GUID: prefix with website URL ----------
+            if ($row) {
+                $guidToStore = $row->guid;
+                if (!$this->looksAbsoluteUrl($guidToStore)) {
+                    $episodeUrl = $this->episodePublicUrl($row->id, $slug);
+                    $guidToStore = $episodeUrl . ($row->guid ? ('#' . rawurlencode($row->guid)) : '');
+                }
+                if ($guidToStore !== $row->guid) {
+                    Episode::where($key)->update(['guid' => $guidToStore, 'updated_at' => now()]);
+                }
+            }
+
+            Log::info('[IMPORT] upserted episode', [
                 'user_id'      => $this->userId,
                 'title'        => $title,
                 'published_at' => $pubAt,
@@ -350,20 +401,15 @@ class ImportRssFeedJob implements ShouldQueue
     }
 
     /**
-     * Stream-download audio to storage and return ['path'=>string,'bytes'=>int,'mime'=>?string].
-     * Uses FILESYSTEM_DISK (or 'public') and writes under: episodes/{userId}/YYYY/MM/{filename}.{ext}
+     * Download audio to storage and return: ['path'=>string,'bytes'=>int,'mime'=>?string,'url'=>string]
      */
     private function downloadAudioToStorage(string $url, int $userId, string $title, ?string $publishedAt): array
     {
-        // temp file
         $tmp = tmpfile();
-        if ($tmp === false) {
-            throw new \RuntimeException('Failed to create temporary file.');
-        }
-        $meta = stream_get_meta_data($tmp);
+        if ($tmp === false) throw new \RuntimeException('Failed to create temporary file.');
+        $meta    = stream_get_meta_data($tmp);
         $tmpPath = $meta['uri'];
 
-        // stream to temp via sink
         $req = Http::timeout(600)
             ->withHeaders([
                 'User-Agent' => 'PodPowerImporter/1.0',
@@ -372,40 +418,56 @@ class ImportRssFeedJob implements ShouldQueue
             ->sink($tmpPath)
             ->get($url);
 
-        if (!$req->ok()) {
-            fclose($tmp);
-            throw new \RuntimeException('Download failed: HTTP '.$req->status());
-        }
+        if (!$req->ok()) { fclose($tmp); throw new \RuntimeException('Download failed: HTTP '.$req->status()); }
 
         $bytes = @filesize($tmpPath) ?: 0;
         $mime  = $req->header('Content-Type');
 
-        // extension + filename
         $ext  = $this->guessAudioExtension($mime, $url) ?? 'mp3';
-        $dateKey = $publishedAt ?: now()->format('Y-m-d H:i:s');
-        $dateForName = str_replace([' ', ':'], ['_', '-'], $dateKey);
-        $baseName = Str::slug($title) ?: 'episode';
-        $filename = "{$baseName}_{$dateForName}.{$ext}";
-
-        $ym = date('Y/m', $publishedAt ? strtotime($publishedAt) : time());
-        $relPath = "episodes/{$userId}/{$ym}/{$filename}";
+        $relPath = $this->relStoragePath($userId, $title, $publishedAt, "audio.{$ext}");
 
         $disk = config('filesystems.default', 'public');
-
-        // ensure dir and write
-        $dir = dirname($relPath);
-        if (!Storage::disk($disk)->exists($dir)) {
-            Storage::disk($disk)->makeDirectory($dir);
-        }
+        $dir  = dirname($relPath);
+        if (!Storage::disk($disk)->exists($dir)) Storage::disk($disk)->makeDirectory($dir);
         rewind($tmp);
         $ok = Storage::disk($disk)->put($relPath, $tmp); // stream write
         fclose($tmp);
+        if (!$ok) throw new \RuntimeException('Failed to write audio to storage.');
 
-        if (!$ok) {
-            throw new \RuntimeException('Failed to write audio to storage.');
-        }
+        return ['path' => $relPath, 'bytes' => $bytes, 'mime' => $mime ?: null, 'url' => $this->publicUrlFor($relPath)];
+    }
 
-        return ['path' => $relPath, 'bytes' => $bytes, 'mime' => $mime ?: null];
+    /** Generic remote download -> storage, returns public URL. */
+    private function downloadToStorageReturnUrl(string $sourceUrl, string $relPath): string
+    {
+        $tmp = tmpfile();
+        if ($tmp === false) throw new \RuntimeException('tmpfile() failed');
+        $meta = stream_get_meta_data($tmp);
+        $tmpPath = $meta['uri'];
+
+        $req = Http::timeout(180)->sink($tmpPath)->get($sourceUrl);
+        if (!$req->ok()) { fclose($tmp); throw new \RuntimeException('Download failed: HTTP '.$req->status()); }
+
+        $disk = config('filesystems.default', 'public');
+        $dir  = dirname($relPath);
+        if (!Storage::disk($disk)->exists($dir)) Storage::disk($disk)->makeDirectory($dir);
+        rewind($tmp);
+        $ok = Storage::disk($disk)->put($relPath, $tmp);
+        fclose($tmp);
+        if (!$ok) throw new \RuntimeException('Failed to write file to storage.');
+
+        return $this->publicUrlFor($relPath);
+    }
+
+    /** Build a relative storage path like episodes/{user}/YYYY/MM/{slug_date}/{filename} */
+    private function relStoragePath(int $userId, string $title, ?string $publishedAt, string $filename): string
+    {
+        $ym = date('Y/m', $publishedAt ? strtotime($publishedAt) : time());
+        $dateKey = $publishedAt ?: now()->format('Y-m-d H:i:s');
+        $dateForName = str_replace([' ', ':'], ['_', '-'], $dateKey);
+        $baseName = Str::slug($title) ?: 'episode';
+        $bucket = "{$baseName}_{$dateForName}";
+        return "episodes/{$userId}/{$ym}/{$bucket}/{$filename}";
     }
 
     /** Map common audio MIME types to extensions; fall back to URL path. */
@@ -424,11 +486,78 @@ class ImportRssFeedJob implements ShouldQueue
             'audio/webm'  => 'webm',
             'application/octet-stream' => null,
         ];
-        if ($mime && isset($map[$mime])) {
-            return $map[$mime] ?: null;
-        }
+        if ($mime && isset($map[$mime])) return $map[$mime] ?: null;
+
         $path = parse_url($url, PHP_URL_PATH);
         $ext  = $path ? strtolower((string) pathinfo($path, PATHINFO_EXTENSION)) : null;
         return in_array($ext, ['mp3','m4a','aac','wav','ogg','opus','webm'], true) ? $ext : null;
+    }
+
+    /** Build an absolute public URL for a storage path on the default disk. */
+    private function publicUrlFor(string $path): string
+    {
+        $disk = config('filesystems.default', 'public');
+        $url  = Storage::disk($disk)->url($path);    // S3 returns absolute
+        return str_starts_with($url, 'http') ? $url : URL::to($url);
+    }
+
+    /** True if URL is absolute (has scheme). */
+    private function looksAbsoluteUrl(?string $url): bool
+    {
+        if (!$url) return false;
+        return (bool) preg_match('~^https?://~i', $url);
+    }
+
+    /** True if URL points off-site. */
+    private function isExternalUrl(?string $url): bool
+    {
+        if (!$url) return true;
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!$host) return true;
+        $app  = parse_url(config('app.url', URL::to('/')), PHP_URL_HOST);
+        return !($app && strtolower($host) === strtolower($app));
+    }
+
+    /** Canonical episode page URL under our site. */
+    private function episodePublicUrl(int $id, string $slug): string
+    {
+        return URL::to("/episodes/{$id}-{$slug}");
+    }
+
+    /** Persist podcast title/description (singleton-aware). */
+    private function updatePodcastSettings(int $userId, ?string $title, ?string $desc): void
+    {
+        $title = trim((string) $title);
+        $desc  = (string) $desc;
+
+        $table = config('podpower.settings_table', 'settings');
+        $isSingleton = Schema::hasColumn($table, 'singleton')
+                    && class_exists(SiteSetting::class)
+                    && method_exists(SiteSetting::class, 'singleton');
+
+        if ($isSingleton) {
+            $s = SiteSetting::singleton();
+            if ($title !== '') { $s->site_title = $title; }
+            if ($desc  !== '') { $s->site_desc  = $desc;  }
+            $s->save();
+            return;
+        }
+
+        $now     = now();
+        $hasUser = Schema::hasColumn($table, 'user_id');
+        $scope   = $hasUser ? ['user_id' => $userId] : [];
+
+        if ($title !== '') {
+            DB::table($table)->updateOrInsert(
+                array_merge($scope, ['key' => 'podcast_title']),
+                ['value' => $title, 'updated_at' => $now, 'created_at' => $now]
+            );
+        }
+        if ($desc !== '') {
+            DB::table($table)->updateOrInsert(
+                array_merge($scope, ['key' => 'podcast_description']),
+                ['value' => $desc, 'updated_at' => $now, 'created_at' => $now]
+            );
+        }
     }
 }

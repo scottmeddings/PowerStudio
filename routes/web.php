@@ -70,8 +70,7 @@ Route::get('/podcast', function () {
 });
 
 
-Route::get('/feed.xml', [\App\Http\Controllers\PodcastFeedController::class, 'index'])
-     ->name('feed.xml');
+
 
 // e.g. /podpower/feed.xml
 Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
