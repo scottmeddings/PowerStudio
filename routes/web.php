@@ -32,6 +32,13 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Settings\RssImportController;
 use App\Jobs\QueueHealthcheckJob;
+use App\Http\Controllers\MonetizationController;
+use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\StripeConnectController;
+use App\Http\Controllers\SponsorshipsController;
+use App\Http\Controllers\HouseAdsController;
+use App\Http\Controllers\AdMarketplaceController;
+use App\Http\Controllers\DynamicAdsController;
 
 
 
@@ -70,7 +77,8 @@ Route::get('/podcast', function () {
 });
 
 
-
+Route::get('/invite/accept/{token}', [\App\Http\Controllers\CollaboratorsController::class, 'accept'])
+    ->name('collab.accept');
 
 // e.g. /podpower/feed.xml
 Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
@@ -92,6 +100,7 @@ Route::get('/site/preview/{template}', [\App\Http\Controllers\SiteController::cl
   ->whereIn('template', ['zen','frontrow','focuspod'])
   ->name('site.preview');
 
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 /*
 |--------------------------------------------------------------------------
@@ -120,7 +129,20 @@ Route::middleware('guest')->group(function () {
 | Authenticated routes
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth')->group(function () {
+
+
+Route::middleware(['auth', 'adminlike'])->group(function () {
+    Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'index'])->name('settings');
+
+    Route::post('/settings/collaborators/invite', [\App\Http\Controllers\CollaboratorsController::class, 'invite'])
+        ->name('collab.invite');
+    Route::post('/settings/collaborators/{id}/revoke', [\App\Http\Controllers\CollaboratorsController::class, 'revoke'])
+        ->name('collab.revoke');
+
+    // Put your Episodes CRUD & other admin pages here so collaborators get full access.
+});
+
+Route::middleware('auth','adminlike')->group(function () {
     // Email verification UX (optional)
     Route::get('/verify-email', fn () => view('auth.verify-email'))->name('verification.notice');
 
@@ -197,8 +219,11 @@ Route::middleware('auth')->group(function () {
     })->name('debug.status.read');
 
 
+
+
     
-    Route::middleware(['web','auth'])->group(function () {
+    Route::middleware(['web','auth','adminlike'])->group(function () {
+        Route::redirect('/settings', '/settings/general')->name('settings');
         Route::get('/settings/import',        [RssImportController::class, 'show'])->name('settings.import');
         Route::post('/settings/import',       [RssImportController::class, 'handle'])->name('settings.import.handle');
         Route::get('/settings/import/status', [RssImportController::class, 'status'])->name('settings.import.status');
@@ -306,7 +331,7 @@ Route::middleware('auth')->group(function () {
 
 
 
-        Route::get('/monetization', [PageController::class, 'monetization'])->name('monetization');
+        
         Route::prefix('distribution')->name('distribution.')->group(function () {
             // Social Share landing (your current page)
             Route::get('/social', [DistributionController::class, 'social'])->name('social');
@@ -347,7 +372,7 @@ Route::middleware('auth')->group(function () {
     | SETTINGS (grouped, with proper name prefix -> settings.*)
     |--------------------------------------------------------------------------
     */
-    Route::middleware(['auth']) // adjust middleware as needed
+    Route::middleware(['auth','adminlike']) // adjust middleware as needed
         ->prefix('settings')
         ->name('settings.')
         ->group(function () {
@@ -417,6 +442,30 @@ Route::middleware('auth')->group(function () {
         return redirect()->route('home');
     })->name('logout');
 });
+/* <monitisation></monitisation>// routes/web.php*/
+Route::get('/monetization', [MonetizationController::class,'index'])
+     ->name('monetization');  // base page
+
+Route::middleware(['auth'])->group(function () {
+    // Dynamic Ad Insertion
+    Route::get('/monetization/dynamic', [AdMarketplaceController::class,'show'])->name('monetization.dynamic.show');
+    Route::post('/monetization/dynamic', [AdMarketplaceController::class,'save'])->name('monetization.dynamic.save');
+
+    // Sponsorships
+    Route::get('/monetization/sponsorships/new', [SponsorshipsController::class,'create'])->name('monetization.sponsorships.new');
+    Route::post('/monetization/sponsorships', [SponsorshipsController::class,'store'])->name('monetization.sponsorships.store');
+
+    // Stripe
+    Route::post('/monetization/stripe/connect', [StripeConnectController::class, 'connect'])->name('monetization.stripe.connect');
+    Route::post('/monetization/stripe/refresh', [StripeConnectController::class, 'refresh'])->name('monetization.stripe.refresh');
+
+    // House Ads
+    Route::get('/monetization/house/new', [HouseAdsController::class,'create'])->name('monetization.house.new');
+    Route::post('/monetization/house', [HouseAdsController::class,'store'])->name('monetization.house.store');
+    Route::post('/monetization/house/import', [HouseAdsController::class,'import'])->name('monetization.house.import');
+});
+
+
 
 /*
 |--------------------------------------------------------------------------

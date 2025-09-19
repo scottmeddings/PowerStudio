@@ -38,6 +38,7 @@ return [
     'mailers' => [
 
         'smtp' => [
+            'default' => env('MAIL_MAILER', 'smtp'),
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
             'url' => env('MAIL_URL'),
@@ -46,6 +47,7 @@ return [
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
+            'throttleToMessagesPerMin' => env('MAIL_THROTTLE_TO_MESSAGES_PER_MIN', null), //https://mailtrap.io has a rate limit of 2 emails/sec per inbox, but consider being even more conservative.
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 

@@ -35,6 +35,11 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    public function collaborator()
+    {
+        return $this->hasOne(\App\Models\Collaborator::class);
+    }
+
     /**
      * Casts.
      */

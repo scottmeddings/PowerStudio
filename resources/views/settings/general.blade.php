@@ -184,6 +184,73 @@
       </div>
     </form>
   </div>
+  {{-- Settings · Collaborators --}}
+<div class="section-card p-4 mt-4">
+  <h5 class="mb-3">Collaborators</h5>
+  <p class="text-muted">Invite teammates to access all Episodes and Settings (admin-level by default).</p>
+
+  <form class="row g-3" method="POST" action="{{ route('collab.invite') }}">
+    @csrf
+    <div class="col-md-6">
+      <label class="form-label fw-semibold">Email *</label>
+      <input type="email" name="email" class="form-control @error('email') is-invalid @enderror"
+             placeholder="teammate@example.com" required>
+      @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-semibold">Role</label>
+      <select name="role" class="form-select">
+        <option value="admin" selected>Admin (full access)</option>
+        <option value="viewer">Viewer (read-only)</option>
+      </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <button class="btn btn-primary w-100">Send Invite</button>
+    </div>
+  </form>
+
+  @php
+    $collabs = \App\Models\Collaborator::orderByRaw('accepted_at IS NULL DESC')->orderBy('email')->get();
+  @endphp
+
+  <div class="table-responsive mt-4">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Email</th><th>Status</th><th>Role</th><th>Invited By</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @forelse($collabs as $c)
+          <tr>
+            <td>{{ $c->email }}</td>
+            <td>
+              @if($c->accepted_at)
+                <span class="badge bg-success">Accepted</span>
+              @else
+                <span class="badge bg-warning text-dark">Pending</span>
+              @endif
+            </td>
+            <td>{{ ucfirst($c->role) }}</td>
+            <td>{{ optional($c->inviter)->name ?? '—' }}</td>
+            <td class="text-nowrap">
+              @if(!$c->accepted_at)
+                <a href="{{ route('collab.accept',['token'=>$c->token]) }}" class="btn btn-sm btn-outline-secondary">Copy Invite Link</a>
+              @endif
+              <form method="POST" action="{{ route('collab.revoke',$c->id) }}" class="d-inline">
+                @csrf
+                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Revoke access?')">Revoke</button>
+              </form>
+            </td>
+          </tr>
+        @empty
+          <tr><td colspan="5" class="text-muted">No collaborators yet.</td></tr>
+        @endforelse
+      </tbody>
+    </table>
+  </div>
+</div>
+
 
   @push('scripts')
   <script>

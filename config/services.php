@@ -34,7 +34,11 @@ return [
     'timeout'         => env('OPENAI_TIMEOUT', 600),
     'connect_timeout' => env('OPENAI_CONNECT_TIMEOUT', 30),
     ],
-
+    'stripe' => [
+        'secret'         => env('STRIPE_SECRET'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'connect_account'=> env('STRIPE_CONNECT_ACCOUNT'),
+    ],
 
     'facebook' => [
     'client_id'     => env('FACEBOOK_CLIENT_ID'),
