@@ -15,7 +15,7 @@
       max-width:440px;
       position:relative;
       z-index:2;
-      background: rgba(255,255,255,.82) !important; /* tweak 0.75–0.92 to taste */
+      background: rgba(255,255,255,.82) !important;
       backdrop-filter: saturate(120%) blur(8px);
       -webkit-backdrop-filter: saturate(120%) blur(8px);
       border: 1px solid rgba(255,255,255,.55);
@@ -23,7 +23,6 @@
       border-radius: 1rem;
     }
     .auth-card .card-body{ background: transparent; }
-
     .btn-icon svg{margin-right:.5rem}
 
     /* Fullscreen photo background */
@@ -67,6 +66,16 @@
             </ul>
           </div>
         @endif
+
+        {{-- Passkey sign-in (WebAuthn) --}}
+        <div class="d-grid gap-2 mb-3">
+          <button type="button" id="btn-passkey"
+                  class="btn btn-outline-dark btn-lg d-flex align-items-center justify-content-center">
+            🔑 Sign in with Passkey
+          </button>
+        </div>
+
+      
 
         {{-- Social sign-in --}}
         <div class="d-grid gap-2 mb-4">
@@ -139,6 +148,13 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  {{-- Expose intended redirect (fallback to home) --}}
+  <script>
+    const INTENDED_URL = @json(session('url.intended', url('/')));
+  </script>
+
+  {{-- Client-side Bootstrap validation --}}
   <script>
     (() => {
       'use strict';
@@ -150,6 +166,62 @@
         }, false);
       });
     })();
+  </script>
+
+  {{-- Passkey (WebAuthn) login --}}
+  <script>
+    async function b64urlToBuf(s){
+      return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+    }
+    async function bufToB64url(b){
+      let bin=''; new Uint8Array(b).forEach(v=>bin+=String.fromCharCode(v));
+      return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+
+    document.getElementById('btn-passkey')?.addEventListener('click', async () => {
+      try {
+        // 1) Ask server for PublicKeyCredentialRequestOptions
+        const resp = await fetch('{{ route('passkeys.options') }}', {
+          method:'POST',
+          headers:{'X-CSRF-TOKEN':'{{ csrf_token() }}'}
+        });
+        if (!resp.ok) throw new Error('options failed');
+        const options = await resp.json();
+
+        // 2) Convert to binary-friendly types
+        options.publicKey.challenge = await b64urlToBuf(options.publicKey.challenge);
+        options.publicKey.allowCredentials = (options.publicKey.allowCredentials||[])
+          .map(c => ({...c, id: b64urlToBuf(c.id)}));
+
+        // 3) WebAuthn assertion
+        const cred = await navigator.credentials.get({ publicKey: options.publicKey });
+
+        // 4) Send to server for verification
+        const verify = await fetch('{{ route('passkeys.verify') }}', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRF-TOKEN':'{{ csrf_token() }}'},
+          body: JSON.stringify({
+            id: cred.id,
+            rawId: await bufToB64url(cred.rawId),
+            type: cred.type,
+            response: {
+              authenticatorData: await bufToB64url(cred.response.authenticatorData),
+              clientDataJSON:    await bufToB64url(cred.response.clientDataJSON),
+              signature:         await bufToB64url(cred.response.signature),
+              userHandle:        cred.response.userHandle ? await bufToB64url(cred.response.userHandle) : null
+            }
+          })
+        });
+        if (!verify.ok) throw new Error('verify failed');
+
+        // Prefer server-provided redirect if you add it; otherwise use intended
+        // const data = await verify.json(); window.location.href = data.redirect || INTENDED_URL;
+        window.location.href = INTENDED_URL;
+      } catch (e) {
+        console.error(e);
+        alert('Passkey sign-in failed. Make sure you\'re on HTTPS (or localhost) and have a registered passkey.');
+      }
+    });
   </script>
 </body>
 </html>

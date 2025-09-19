@@ -6,7 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class Payout extends Model
+class Payout extends \App\Models\TenantModel
 {
     protected $fillable = [
         'provider',       // 'stripe' etc.

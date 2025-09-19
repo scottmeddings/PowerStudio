@@ -5,7 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class PodcastApp extends Model
+class PodcastApp extends \App\Models\TenantModel
 {
     protected $fillable = [
         'user_id','provider','status','external_url','config','submitted_at','connected_at'

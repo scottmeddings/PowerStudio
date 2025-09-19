@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Collaborator extends Model
+class Collaborator extends \App\Models\TenantModel
 {
     protected $fillable = [
         'email','user_id','invited_by','role','token','accepted_at'

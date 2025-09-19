@@ -17,4 +17,9 @@ class AppServiceProvider extends ServiceProvider
     }
 
     public function boot(): void {}
+    // app/Providers/AuthServiceProvider.php
+    protected $policies = [
+        \App\Models\Episode::class => \App\Policies\EpisodePolicy::class,
+    ];
+
 }

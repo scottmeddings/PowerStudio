@@ -5,7 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class EpisodeChapter extends Model
+class EpisodeChapter extends \App\Models\TenantModel
 {
     protected $fillable = [
         'episode_id', 'sort', 'title', 'starts_at_ms',

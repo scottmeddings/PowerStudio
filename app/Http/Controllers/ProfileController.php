@@ -57,28 +57,4 @@ class ProfileController extends Controller
 
         return Redirect::to('/');
     }
-    public function uploadCover(Request $request)
-    {
-        $request->validate([
-            // square art recommended ≥1400px; allow jpeg/png/webp up to 5 MB
-            'cover' => ['required','image','mimes:jpeg,jpg,png,webp','max:5120','dimensions:min_width=1400,min_height=1400'],
-        ]);
-
-        $user = $request->user();
-
-        // Delete old file if present
-        if ($user->cover_path && Storage::disk('public')->exists($user->cover_path)) {
-            Storage::disk('public')->delete($user->cover_path);
-        }
-
-        // Store new file on the public disk
-        $path = $request->file('cover')->store("covers/{$user->id}", 'public');
-
-        // Save path on the user
-        $user->cover_path = $path;
-        $user->save();
-
-        return back()->with('success', 'Cover image updated.');
-    }
 }
-

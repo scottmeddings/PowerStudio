@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Download extends Model
+class Download extends \App\Models\TenantModel
 {
     // No $table override needed (defaults to 'downloads')
 

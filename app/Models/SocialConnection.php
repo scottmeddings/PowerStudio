@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class SocialConnection extends Model
+class SocialConnection extends \App\Models\TenantModel
 {
     protected $fillable = [
         'user_id','provider','access_token','refresh_token','expires_at',

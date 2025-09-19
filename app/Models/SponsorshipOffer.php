@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class SponsorshipOffer extends Model
+class SponsorshipOffer extends \App\Models\TenantModel
 {
     protected $fillable = [
         'podcast_id','title','cpm_usd','min_downloads',

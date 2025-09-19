@@ -7,13 +7,24 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
 use App\Models\EpisodeChapter;
 use App\Models\EpisodeTranscript;
+use App\Models\Concerns\BelongsToOwner;
 
-class Episode extends Model
+
+class Episode extends \App\Models\TenantModel
 {
-    use HasFactory;
+   
+
+    use HasFactory, BelongsToOwner;
+
+    // Let the trait set user_id on create; include it ONLY if you also import/migrate from external data.
+    
+
+ 
+  
+    protected $fillable = ['title','...','user_id']; // keep user_id fillable if you import/migrate
 
    
-    protected $guarded = [];
+  
 
     // app/Models/Episode.php
 
@@ -21,6 +32,7 @@ class Episode extends Model
     protected $casts = [
         'published_at'     => 'datetime',
         'duration_seconds' => 'integer',
+        'user_id' => 'int',
         // Do NOT cast 'chapters' to array when using the hasMany relation.
     ];
 

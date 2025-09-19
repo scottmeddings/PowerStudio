@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
-class Setting extends Model
+class Setting extends TenantModel
 {
     protected $table = 'settings';
 
     protected $fillable = [
+        'user_id',
+
         // legacy
         'key', 'value', 'singleton',
 
@@ -40,10 +42,8 @@ class Setting extends Model
     ];
 
     protected $casts = [
-        // legacy JSON value
-        'value' => 'array',
-
-        // booleans
+        'user_id'                     => 'int',
+        'value'                       => 'array',   // legacy JSON
         'site_explicit'               => 'boolean',
         'site_topbar_show'            => 'boolean',
         'feed_explicit'               => 'boolean',
@@ -51,8 +51,6 @@ class Setting extends Model
         'feed_apple_verification'     => 'boolean',
         'feed_redirect_enabled'       => 'boolean',
         'feed_set_new_feed_url'       => 'boolean',
-
-        // ints
         'feed_episode_limit'          => 'integer',
         'singleton'                   => 'integer',
     ];
@@ -65,42 +63,53 @@ class Setting extends Model
         return $q->where('singleton', 1);
     }
 
-    /** Return the singleton row, creating it if missing (with key = 'settings') */
-    public static function singleton(): self
+    /**
+     * Return the per-user singleton row (creating it if missing).
+     * Uses NULL key to avoid UNIQUE(key) collisions.
+     */
+    public static function singleton(?int $userId = null): self
     {
+        $uid = $userId ?? Auth::id();
+
+        // No auth context (console/queue). Don't create dupes; reuse any existing singleton row.
+        if (!$uid) {
+            return static::query()
+                ->singleton()
+                ->firstOrCreate(['singleton' => 1], ['key' => null, 'user_id' => null]);
+        }
+
+        // Per-user singleton; keep key NULL
         return static::query()->firstOrCreate(
-            ['singleton' => 1],   // lookup
-            ['key' => 'settings'] // only used on create
+            ['user_id' => $uid, 'singleton' => 1],
+            ['key' => null]
         );
     }
 
-    /** Cached hasColumn to avoid repeated information_schema / pragma calls */
+    /** Cached hasColumn to avoid repeated schema checks */
     protected static function hasColumn(string $column): bool
     {
-        $cacheKey = "settings:hascol:$column";
-        return Cache::remember($cacheKey, 300, function () use ($column) {
-            return Schema::hasColumn('settings', $column);
-        });
+        return Cache::remember("settings:hascol:$column", 300, fn () =>
+            Schema::hasColumn('settings', $column)
+        );
     }
 
-    /**
-     * Get a setting by name.
-     * If a column with that name exists -> read from the singleton row column.
-     * Otherwise, fall back to legacy key/value.
-     */
+    /** Get a setting by name for the CURRENT user. */
     public static function get(string $name, $default = null)
     {
-        $cacheKey = "settings:get:$name";
+        $uid = Auth::id() ?? 0;
+        $cacheKey = "settings:u:$uid:get:$name";
 
-        return Cache::remember($cacheKey, 300, function () use ($name, $default) {
+        return Cache::remember($cacheKey, 300, function () use ($name, $default, $uid) {
             if (static::hasColumn($name)) {
-                $row = static::singleton();
+                $row = static::singleton($uid);
                 $val = $row->getAttribute($name);
                 return $val !== null ? $val : $default;
             }
 
-            // legacy key/value fallback
-            $row = static::query()->where('key', $name)->first();
+            // Legacy per-user key/value; fall back to global (user_id NULL) if present
+            $row = static::query()->where('key', $name)->where('user_id', $uid)->first()
+                ?? static::query()->where('key', $name)->whereNull('user_id')->first();
+
             if (!$row) return $default;
 
             $val = $row->value ?? $row->getAttribute('value');
@@ -108,58 +117,76 @@ class Setting extends Model
         });
     }
 
-    /**
-     * Set a setting by name.
-     * Writes to singleton column if the column exists; otherwise writes a legacy key/value row.
-     */
+    /** Set a setting by name for the CURRENT user. */
     public static function set(string $name, $value): void
     {
+        $uid = Auth::id();
+
         if (static::hasColumn($name)) {
-            // write to singleton columns
-            $row = static::singleton();
+            $row = static::singleton($uid);
             $row->setAttribute($name, $value);
             $row->save();
         } else {
-            // LEGACY key/value row: ensure singleton is NULL to avoid UNIQUE(singleton=1) collision
             static::query()->updateOrCreate(
-                ['key' => $name],
+                ['user_id' => $uid, 'key' => $name],
                 ['value' => $value, 'singleton' => null]
             );
         }
 
-        Cache::forget("settings:get:$name");
+        Cache::forget("settings:u:" . ($uid ?? 0) . ":get:$name");
     }
 
-    /**
-     * Bulk get with defaults (works for both column + legacy keys).
-     *
-     * @param array $keys      e.g. ['feed_url','feed_explicit'] or legacy keys
-     * @param array $defaults  keyed by $keys (optional)
-     * @return array           ['key' => value, ...]
-     */
+    /** Bulk get with defaults for CURRENT user. */
     public static function getMany(array $keys, array $defaults = []): array
     {
         $out = [];
-        foreach ($keys as $k) {
-            $out[$k] = static::get($k, $defaults[$k] ?? null);
-        }
+        foreach ($keys as $k) $out[$k] = static::get($k, $defaults[$k] ?? null);
         return $out;
     }
 
-    /** Convenience: set many at once (array of key => value). */
+    /** Set many at once for CURRENT user. */
     public static function setMany(array $items): void
     {
-        foreach ($items as $k => $v) {
-            static::set($k, $v);
+        foreach ($items as $k => $v) static::set($k, $v);
+    }
+
+    /** Admin/utility: get all settings as key=>value for a specific user. */
+    public static function kv(?int $userId = null): array
+    {
+        $uid = $userId ?? Auth::id();
+
+        $map = [];
+
+        // Columns from the per-user singleton row
+        $row = static::singleton($uid);
+        if ($row) {
+            foreach ($row->getAttributes() as $attr => $val) {
+                if (in_array($attr, ['id','user_id','key','value','singleton','created_at','updated_at'], true)) continue;
+                $map[$attr] = $val;
+            }
         }
+
+        // Legacy rows for this user
+        static::query()
+            ->where('user_id', $uid)
+            ->whereNull('singleton')
+            ->get(['key','value'])
+            ->each(function ($r) use (&$map) {
+                $map[$r->key] = $r->value;
+            });
+
+        return $map;
     }
 
     /* Clear per-key cache when the model is saved directly on columns */
     protected static function booted(): void
     {
+        parent::booted();
+
         static::saved(function (self $model) {
+            $uid = $model->user_id ?? (Auth::id() ?? 0);
             foreach (array_keys($model->getChanges()) as $attr) {
-                Cache::forget("settings:get:$attr");
+                Cache::forget("settings:u:$uid:get:$attr");
             }
         });
     }

@@ -5,7 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class RevenueDaily extends Model
+class RevenueDaily extends \App\Models\TenantModel
 {
     // Our table name is not the Laravel plural default
     protected $table = 'revenue_daily';

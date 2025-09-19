@@ -184,6 +184,7 @@
       </div>
     </form>
   </div>
+@can('manage-collaborators')
   {{-- Settings · Collaborators --}}
 <div class="section-card p-4 mt-4">
   <h5 class="mb-3">Collaborators</h5>
@@ -208,6 +209,7 @@
       <button class="btn btn-primary w-100">Send Invite</button>
     </div>
   </form>
+
 
   @php
     $collabs = \App\Models\Collaborator::orderByRaw('accepted_at IS NULL DESC')->orderBy('email')->get();
@@ -250,8 +252,7 @@
     </table>
   </div>
 </div>
-
-
+@endcan
   @push('scripts')
   <script>
     // lightweight toolbar for description

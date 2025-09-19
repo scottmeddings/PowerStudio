@@ -39,7 +39,10 @@ use App\Http\Controllers\SponsorshipsController;
 use App\Http\Controllers\HouseAdsController;
 use App\Http\Controllers\AdMarketplaceController;
 use App\Http\Controllers\DynamicAdsController;
+use Laragear\WebAuthn\Http\Controllers\LoginController as PasskeyLogin;
+use Laragear\WebAuthn\Http\Controllers\RegisterKeyController as PasskeyRegister;
 
+require __DIR__.'/auth.php';
 
 
 
@@ -61,45 +64,7 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 */
 
-
-
-
-
-// Catch-all to map a custom feed path/domain from DB → 301 to canonical
 Route::fallback(FeedAliasController::class);
-
-
-Route::get('/podcast', function () {
-    $row = DB::table('site_settings')->where('key','website')->first();
-    $s = $row ? (array) json_decode($row->value, true) : ['template'=>'zen'];
-    // dispatch to a blade per template
-    return view('site.templates.'.$s['template'], ['settings'=>$s]);
-});
-
-
-Route::get('/invite/accept/{token}', [\App\Http\Controllers\CollaboratorsController::class, 'accept'])
-    ->name('collab.accept');
-
-// e.g. /podpower/feed.xml
-Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
-    ->where('slug', '[A-Za-z0-9-]+')
-    ->name('feed.bySlug');
-
-Route::get('/podcast',  [PublicSiteController::class, 'index'])->name('site.home');
-Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site.episode');
-
-// Public site using the SAVED template
-Route::get('/site', [SiteController::class, 'show'])->name('site.show');
-
-// Preview a specific template without saving
-Route::get('/site/preview/{template}', [SiteController::class, 'preview'])
-    ->whereIn('template', ['zen','frontrow','focuspod'])
-    ->name('site.preview');
-
-Route::get('/site/preview/{template}', [\App\Http\Controllers\SiteController::class, 'preview'])
-  ->whereIn('template', ['zen','frontrow','focuspod'])
-  ->name('site.preview');
-
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 /*
@@ -123,6 +88,55 @@ Route::middleware('guest')->group(function () {
         ->whereIn('provider', ['google','microsoft','facebook'])
         ->name('social.callback');
 });
+    Route::middleware('guest')->group(function () {
+        Route::post('/passkeys/options', [PasskeyLogin::class, 'options'])->name('passkeys.options');
+        Route::post('/passkeys/verify',  [PasskeyLogin::class, 'verify'])->name('passkeys.verify');
+});
+
+ Route::get('/podcast', function () {
+    $row = DB::table('site_settings')->where('key','website')->first();
+    $s = $row ? (array) json_decode($row->value, true) : ['template'=>'zen'];
+    // dispatch to a blade per template
+    return view('site.templates.'.$s['template'], ['settings'=>$s]);
+});
+
+
+Route::get('/invite/accept/{token}', [\App\Http\Controllers\CollaboratorsController::class, 'accept'])
+    ->name('collab.accept');
+
+// e.g. /podpower/feed.xml
+Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
+    ->where('slug', '[A-Za-z0-9-]+')
+    ->name('feed.bySlug');
+
+
+Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site.episode');
+
+// Public site using the SAVED template
+Route::get('/site', [SiteController::class, 'show'])->name('site.show');
+
+// Preview a specific template without saving
+Route::get('/site/preview/{template}', [SiteController::class, 'preview'])
+    ->whereIn('template', ['zen','frontrow','focuspod'])
+    ->name('site.preview');
+
+
+
+
+
+/*
+|--------------------------------------------------------------------------
+| admin routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth','can:manage-collaborators'])
+    ->group(function () {
+        Route::get('/settings/collaborators', [SettingsController::class, 'collaborators'])
+            ->name('settings.collaborators');
+        Route::post('/settings/collaborators/invite', [SettingsController::class, 'invite']);
+        Route::delete('/settings/collaborators/{id}', [SettingsController::class, 'revoke']);
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -130,8 +144,13 @@ Route::middleware('guest')->group(function () {
 |--------------------------------------------------------------------------
 */
 
+Route::middleware('auth')->group(function () {
+        Route::post('/passkeys/register/options', [PasskeyRegister::class, 'options'])->name('passkeys.register.options');
+        Route::post('/passkeys/register',          [PasskeyRegister::class, 'create'])->name('passkeys.register');
+        Route::delete('/passkeys/{credentialId}',  [PasskeyRegister::class, 'destroy'])->name('passkeys.destroy');
+});
 
-Route::middleware(['auth', 'adminlike'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'index'])->name('settings');
 
     Route::post('/settings/collaborators/invite', [\App\Http\Controllers\CollaboratorsController::class, 'invite'])
@@ -142,7 +161,7 @@ Route::middleware(['auth', 'adminlike'])->group(function () {
     // Put your Episodes CRUD & other admin pages here so collaborators get full access.
 });
 
-Route::middleware('auth','adminlike')->group(function () {
+Route::middleware('auth')->group(function () {
     // Email verification UX (optional)
     Route::get('/verify-email', fn () => view('auth.verify-email'))->name('verification.notice');
 
@@ -169,59 +188,13 @@ Route::middleware('auth','adminlike')->group(function () {
     Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.themes.edit');
     Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.themes.update');
     Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
+    Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.edit');
+    Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.update');
+    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
+    Route::get('/website/themes', [WebsiteController::class, 'edit'])->name('website.themes');
+    Route::post('/website/themes', [WebsiteController::class, 'update'])->name('website.themes.update');
+            
 
-
-    Route::get('/distribution/website', [WebsiteController::class, 'edit'])
-    ->name('website.edit');
-
-    Route::post('/distribution/website', [WebsiteController::class, 'update'])
-        ->name('website.update');
-
-    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])
-    ->name('website.banner.clear');
-
-
-
-
-    //import from another rss feed
-
-    Route::get('/debug/progress-write', function () {
-        Cache::store(config('podpower.rss_progress_store','file'))->put('rss_import:progress', [
-            'message' => 'Ping from /debug/progress-write',
-            'percent' => 9,
-            'started_at' => now()->toIso8601String(),
-        ], now()->addMinutes(5));
-        return 'ok';
-    })->name('debug.progress.write');
-
-    Route::get('/dev/qhc', function () {
-        \Log::info('[QHC] dispatching');
-        QueueHealthcheckJob::dispatch()->onQueue('default');
-        return 'ok';
-    })->middleware(['web','auth']);
-
-    // B) Dispatch the Import job directly (bypass Blade/controller)
-    Route::get('/debug/dispatch-import', function () {
-        Log::info('DEBUG: /debug/dispatch-import called');
-        dispatch(new \App\Jobs\ImportRssFeedJob(
-            request('url', ''),
-            false,
-            optional(auth()->user())->id
-        ))->onQueue('default');
-        return 'queued';
-    })->name('debug.dispatch.import');
-
-    // C) Echo what the status endpoint will return
-    Route::get('/debug/status-read', function () {
-        $data = Cache::store(config('podpower.rss_progress_store','file'))->get('rss_import:progress');
-        Log::info('DEBUG: /debug/status-read', ['data' => $data]);
-        return response()->json(['progress' => $data]);
-    })->name('debug.status.read');
-
-
-
-
-    
     Route::middleware(['web','auth','adminlike'])->group(function () {
         Route::redirect('/settings', '/settings/general')->name('settings');
         Route::get('/settings/import',        [RssImportController::class, 'show'])->name('settings.import');
@@ -291,6 +264,30 @@ Route::middleware('auth','adminlike')->group(function () {
         Route::get   ('/transcript/download',     [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
     });
 
+      /*
+    |--------------------------------------------------------------------------
+    | sTSATISTICS
+    |--------------------------------------------------------------------------
+    */
+    
+    Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics');
+    Route::get('/statistics/range/{range}', [StatisticsController::class, 'index'])->whereNumber('range')->name('statistics.range');
+
+
+      /*
+    |--------------------------------------------------------------------------
+    | pLAYER EMBED
+    |--------------------------------------------------------------------------
+    */
+   
+
+    Route::get('/embed/player', [PlayerEmbedController::class, 'iframe'])   // HTML for <iframe>
+     ->name('embed.player');
+    Route::get('/embed/player.js', [PlayerEmbedController::class, 'script']) // JS loader (no iframe needed in markup)
+        ->name('embed.player.script');
+    Route::get('/oembed', [PlayerEmbedController::class, 'oembed'])         // optional: oEmbed JSON
+     ->name('embed.oembed');
+
     /*
     |--------------------------------------------------------------------------
     | Distribution, Statistics, Monetization (left menu)
@@ -298,72 +295,46 @@ Route::middleware('auth','adminlike')->group(function () {
     */
     
     Route::get('/distribution', [DistributionController::class, 'index'])->name('distribution');
-
-    Route::get('/embed/player', [PlayerEmbedController::class, 'iframe'])   // HTML for <iframe>
-     ->name('embed.player');
-
-    Route::get('/embed/player.js', [PlayerEmbedController::class, 'script']) // JS loader (no iframe needed in markup)
-        ->name('embed.player.script');
-
-    Route::get('/oembed', [PlayerEmbedController::class, 'oembed'])         // optional: oEmbed JSON
-     ->name('embed.oembed');
-
-
-    Route::get('/distribution/podcast-apps', [DistributionController::class, 'player'])
-     ->name('distribution.player');
-
     Route::prefix('distribution')->name('distribution.')->group(function () {
+        Route::get('/podcast-apps', [DistributionController::class, 'player'])->name('distribution.player');
+        Route::get('/social', [DistributionController::class, 'social'])->name('social');
         Route::get('/apps',    [DistributionController::class, 'apps'])->name('apps');
         Route::get('/social',  [DistributionController::class, 'social'])->name('social');
         Route::get('/website', [DistributionController::class, 'website'])->name('website');
         Route::get('/player',  [DistributionController::class, 'player'])->name('player');
-
-
-
-        // existing actions
         Route::post('/{slug}',   [DistributionController::class, 'save'])->name('save');
         Route::delete('/{slug}', [DistributionController::class, 'disconnect'])->name('disconnect');
-    });
-        
-    
-    Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics');
-    Route::get('/statistics/range/{range}', [StatisticsController::class, 'index'])->whereNumber('range')->name('statistics.range');
-
-
-
-        
-        Route::prefix('distribution')->name('distribution.')->group(function () {
-            // Social Share landing (your current page)
-            Route::get('/social', [DistributionController::class, 'social'])->name('social');
-
-            // ---- OAuth-ish endpoints per provider ----
-            Route::prefix('social')->name('social.')->group(function () {
-                // Start connect
-                Route::get('/auth/{provider}', [DistributionController::class, 'socialRedirect'])
+        Route::prefix('social')->name('social.')->group(function () {
+        // Start connect
+        Route::get('/auth/{provider}', [DistributionController::class, 'socialRedirect'])
                     ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
                     ->name('auth');
 
-                // OAuth callback
-                Route::get('/auth/{provider}/callback', [DistributionController::class, 'socialCallback'])
+        // OAuth callback
+        Route::get('/auth/{provider}/callback', [DistributionController::class, 'socialCallback'])
                     ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
                     ->name('callback');
 
-                // Disconnect
-                Route::delete('/{provider}', [DistributionController::class, 'socialDisconnect'])
+        // Disconnect
+        Route::delete('/{provider}', [DistributionController::class, 'socialDisconnect'])
                     ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
                     ->name('disconnect');
 
-                // Optional: quick test/share button
-                Route::post('/test/{provider}', [DistributionController::class, 'socialTest'])
-                    ->whereIn('provider', ['facebook','linkedin','youtube','tumblr','wordpress'])
-                    ->name('test');
-            });
         });
+
+
+
+
+});
+        
     
-            Route::middleware(['auth'])->group(function () {
-            Route::get('/website/themes', [WebsiteController::class, 'edit'])->name('website.themes');
-            Route::post('/website/themes', [WebsiteController::class, 'update'])->name('website.themes.update');
-        });
+
+        
+    
+          
+        
+    
+           
     
     
     
@@ -372,7 +343,7 @@ Route::middleware('auth','adminlike')->group(function () {
     | SETTINGS (grouped, with proper name prefix -> settings.*)
     |--------------------------------------------------------------------------
     */
-    Route::middleware(['auth','adminlike']) // adjust middleware as needed
+    Route::middleware(['auth']) // adjust middleware as needed
         ->prefix('settings')
         ->name('settings.')
         ->group(function () {
@@ -389,8 +360,7 @@ Route::middleware('auth','adminlike')->group(function () {
             // Pages: General
             Route::get ('/general', [SettingsController::class, 'general'])->name('general');
             Route::post('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
-            // If you prefer PUT:
-            // Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+            
 
             // Pages: Feed
             Route::get ('/feed', [SettingsController::class, 'feed'])->name('feed');
@@ -401,9 +371,7 @@ Route::middleware('auth','adminlike')->group(function () {
             Route::get ('/plugins', [SettingsController::class, 'plugins'])->name('plugins');
             Route::post('/plugins', [SettingsController::class, 'updatePlugins'])->name('plugins.update');
 
-            // Import
-            //Route::get ('/import', [SettingsController::class, 'import'])->name('import');
-            //Route::post('/import', [SettingsController::class, 'handleImport'])->name('import.handle');
+            
         });
 
     /*
@@ -419,17 +387,7 @@ Route::middleware('auth','adminlike')->group(function () {
     Route::delete('/comments/{comment}',       [CommentController::class, 'destroy'])->name('comments.destroy');
     Route::post('/comments/{comment}/approve', [CommentController::class, 'approve'])->name('comments.approve');
 
-    // AI debug (optional)
-    Route::get('/episodes/{episode}/ai/debug', function (\App\Models\Episode $episode) {
-        $id = $episode->id;
-        return response()->json([
-            'env_queue' => config('queue.default'),
-            'db_status' => $episode->only(['ai_status','ai_progress','ai_message']),
-            'cache'     => Cache::get("ai:$id:progress"),
-            'pid'       => Cache::get("ai:$id:pid"),
-            'queueSize' => method_exists(\Queue::class, 'size') ? \Queue::size('default') : null,
-        ]);
-    })->name('episodes.ai.debug');
+
 
     // Test screen
     Route::get('/test/totals', [TestController::class, 'totals'])->name('test.totals');
@@ -442,11 +400,17 @@ Route::middleware('auth','adminlike')->group(function () {
         return redirect()->route('home');
     })->name('logout');
 });
-/* <monitisation></monitisation>// routes/web.php*/
-Route::get('/monetization', [MonetizationController::class,'index'])
-     ->name('monetization');  // base page
+
+
+
+/* <monitisation></monitisation> */
+
 
 Route::middleware(['auth'])->group(function () {
+
+    Route::get('/monetization', [MonetizationController::class,'index'])
+     ->name('monetization');  // base page
+
     // Dynamic Ad Insertion
     Route::get('/monetization/dynamic', [AdMarketplaceController::class,'show'])->name('monetization.dynamic.show');
     Route::post('/monetization/dynamic', [AdMarketplaceController::class,'save'])->name('monetization.dynamic.save');
