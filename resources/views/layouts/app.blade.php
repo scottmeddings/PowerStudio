@@ -75,6 +75,13 @@
     </a>
 
     <nav class="mt-2">
+
+      {{-- Quick role check for admin-only items inside Settings --}}
+      @php
+        $role    = auth()->user()->role ?? 'user';
+        $isAdmin = $role === 'admin';
+      @endphp
+
       <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
          href="{{ route('dashboard') }}" @if(request()->routeIs('dashboard')) aria-current="page" @endif>
         <i class="bi bi-speedometer2 me-2"></i>Dashboard
@@ -88,10 +95,7 @@
       {{-- Distribution dropdown --}}
       @php
         $inDistribution = request()->routeIs('distribution*');
-
         $distIndex  = route('distribution');
-
-        // Use Route::has(...) to check existence of named routes
         $appsUrl    = \Route::has('distribution.apps')    ? route('distribution.apps')    : $distIndex;
         $socialUrl  = \Route::has('distribution.social')  ? route('distribution.social')  : $distIndex;
         $websiteUrl = \Route::has('distribution.website') ? route('distribution.website') : $distIndex;
@@ -153,8 +157,12 @@
         <i class="bi bi-currency-dollar me-2"></i>Monetization
       </a>
 
-      {{-- Settings dropdown --}}
-      @php $inSettings = request()->routeIs('settings.*'); @endphp
+      {{-- Settings dropdown (now also houses Administration) --}}
+      @php
+        // Expand Settings when on settings.* or any admin.* routes
+        $inSettings = request()->routeIs('settings.*') || request()->routeIs('admin.*');
+        $usersUrl   = \Route::has('admin.users.index') ? route('admin.users.index') : url('/admin/users');
+      @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
           <a class="nav-link flex-grow-1 {{ $inSettings ? 'active' : '' }}"
@@ -197,6 +205,17 @@
                 <i class="bi bi-cloud-arrow-down me-2"></i>Import from RSS
               </a>
             </li>
+
+            {{-- Administration subsection (admins only) --}}
+            @if($isAdmin)
+              <li class="mt-3 px-4 text-uppercase small" style="color:#94a3b8;">Administration</li>
+              <li>
+                <a class="nav-link ps-4 {{ request()->routeIs('admin.users.*') ? 'active' : '' }}"
+                   href="{{ $usersUrl }}">
+                  <i class="bi bi-people-gear me-2"></i>User Management
+                </a>
+              </li>
+            @endif
           </ul>
         </div>
       </div>

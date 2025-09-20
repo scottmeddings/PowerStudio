@@ -24,33 +24,65 @@ class User extends Authenticatable implements MustVerifyEmail
      * You can relax this to UserVerification::Preferred if desired.
      */
     protected UserVerification $webauthnUserVerification = UserVerification::Required;
-    public function isAdmin(): bool   { return $this->role === 'admin'; }
-    public function isUser(): bool    { return $this->role === 'user'; }
-    /**
-     * Mass assignable attributes.
-     */
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Roles
+    // ─────────────────────────────────────────────────────────────────────────────
+    public const ROLE_ADMIN    = 'admin';
+    public const ROLE_CREATOR  = 'creator';
+    public const ROLE_READONLY = 'readonly';
+    public const ROLE_USER     = 'user'; // baseline
+
+    public static function allowedRoles(): array
+    {
+        return [
+            self::ROLE_ADMIN,
+            self::ROLE_CREATOR,
+            self::ROLE_READONLY,
+            self::ROLE_USER,
+        ];
+    }
+
+    // Convenience checks
+    public function isAdmin(): bool    { return $this->role === self::ROLE_ADMIN; }
+    public function isCreator(): bool  { return $this->role === self::ROLE_CREATOR; }
+    public function isReadonly(): bool { return $this->role === self::ROLE_READONLY; }
+    public function isUser(): bool     { return $this->role === self::ROLE_USER; }
+
+    // Simple “capabilities” helpers you can expand later
+    public function canManageUsers(): bool   { return $this->isAdmin(); }
+    public function canEditContent(): bool   { return $this->isAdmin() || $this->isCreator(); }
+    public function canViewContent(): bool   { return true; } // everyone may view by default
+
+    // Query scopes
+    public function scopeAdmins($q)   { return $q->where('role', self::ROLE_ADMIN); }
+    public function scopeCreators($q) { return $q->where('role', self::ROLE_CREATOR); }
+    public function scopeReadonly($q) { return $q->where('role', self::ROLE_READONLY); }
+    public function scopeUsers($q)    { return $q->where('role', self::ROLE_USER); }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Mass assignment / defaults / casts
+    // ─────────────────────────────────────────────────────────────────────────────
     protected $fillable = [
         'name',
         'email',
         'password',
+        'role',                // ← important for managing roles
         // 'profile_photo_path',
         // 'cover_path',
         // 'cover_url',
         // 'podcast_cover_url',
     ];
 
-    /**
-     * Hidden attributes.
-     */
+    protected $attributes = [
+        'role' => self::ROLE_USER, // default baseline
+    ];
+
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-
-    /**
-     * Automatically include these accessors when casting to array/JSON.
-     */
     protected $appends = [
         'profile_photo_url',
         'avatar_url',
@@ -58,20 +90,18 @@ class User extends Authenticatable implements MustVerifyEmail
         'display_name',
     ];
 
-    /**
-     * Casts.
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
+            'role'              => 'string',
         ];
     }
 
-    /**
-     * Relationships
-     */
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Relationships
+    // ─────────────────────────────────────────────────────────────────────────────
     public function collaborator(): HasOne
     {
         return $this->hasOne(\App\Models\Collaborator::class);
@@ -82,6 +112,9 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(\App\Models\Episode::class)->latest();
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Accessors
+    // ─────────────────────────────────────────────────────────────────────────────
     /**
      * Public cover image (podcast artwork) URL.
      * Priority: podcast_cover_url > cover_url > storage file > null.
@@ -122,7 +155,7 @@ class User extends Authenticatable implements MustVerifyEmail
     /**
      * Handy display name fallback: "Scott Meddings" → provided,
      * otherwise "scott" → "Scott".
-      */
+     */
     public function getDisplayNameAttribute(): string
     {
         if (!empty($this->name)) {

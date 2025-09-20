@@ -41,6 +41,7 @@ use App\Http\Controllers\AdMarketplaceController;
 use App\Http\Controllers\DynamicAdsController;
 use Laragear\WebAuthn\Http\Controllers\LoginController as PasskeyLogin;
 use Laragear\WebAuthn\Http\Controllers\RegisterKeyController as PasskeyRegister;
+use App\Http\Controllers\Admin\UserManagementController;
 
 require __DIR__.'/auth.php';
 
@@ -143,6 +144,18 @@ Route::middleware(['auth','can:manage-collaborators'])
 | Authenticated routes
 |--------------------------------------------------------------------------
 */
+
+
+
+Route::middleware(['auth','verified','role:admin'])
+    ->prefix('admin')->name('admin.')
+    ->group(function () {
+        Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+        Route::post('/users', [UserManagementController::class, 'store'])->name('users.store');
+        Route::patch('/users/{user}/role', [UserManagementController::class, 'updateRole'])->name('users.role');
+        Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+    });
+
 
 Route::middleware('auth')->group(function () {
         Route::post('/passkeys/register/options', [PasskeyRegister::class, 'options'])->name('passkeys.register.options');
