@@ -39,9 +39,22 @@ use App\Http\Controllers\SponsorshipsController;
 use App\Http\Controllers\HouseAdsController;
 use App\Http\Controllers\AdMarketplaceController;
 use App\Http\Controllers\DynamicAdsController;
-use Laragear\WebAuthn\Http\Controllers\LoginController as PasskeyLogin;
-use Laragear\WebAuthn\Http\Controllers\RegisterKeyController as PasskeyRegister;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Auth\PasskeyLoginController;    // WebAuthn assertion (guest sign-in)
+use App\Http\Controllers\Auth\PasskeyRegisterController;
+use Illuminate\Support\Facades\Mail;
+use App\Http\Controllers\Auth\SocialConnectController;
+use App\Http\Controllers\AiController;
+use App\Http\Controllers\Auth\SocialOAuthController;
+use App\Http\Controllers\SocialShareController;
+use App\Http\Controllers\AiEnhanceController;
+use App\Http\Controllers\LinkedInAuthController;
+
+
+
+
+
+
 
 require __DIR__.'/auth.php';
 
@@ -58,6 +71,47 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 })->name('home');
+
+
+
+// --- Passkey SIGN-IN (public) ---
+Route::post('/passkeys/options', [PasskeyLoginController::class, 'options'])
+    ->name('passkeys.options');
+Route::post('/passkeys/verify',  [PasskeyLoginController::class, 'verify'])
+    ->name('passkeys.verify');
+
+// --- Passkey REGISTRATION (requires auth) ---
+Route::middleware('auth')->group(function () {
+    Route::view('/passkeys/register', 'auth.passkeys-register')
+        ->name('passkeys.register.view');
+
+    Route::post('/passkeys/register/options', [PasskeyRegisterController::class, 'options'])
+        ->name('passkeys.register.options');
+
+    Route::post('/passkeys/register', [PasskeyRegisterController::class, 'store'])
+        ->name('passkeys.register');
+
+    // (optional) back-compat if your JS still posts here:
+    Route::post('/passkeys/register/store', [PasskeyRegisterController::class, 'store'])
+        ->name('passkeys.register.store');
+
+    // Remove a stored credential by ID
+    Route::delete('/passkeys/{credentialId}', [PasskeyRegisterController::class, 'destroy'])
+        ->name('passkeys.destroy');    // <— fixes “Route […] not defined”
+});
+
+
+
+Route::get('test/_mail-', function () {
+    try {
+        Mail::html('<h2>Powerpod mail test</h2><p>Sent at '.now().'</p>', function ($m) {
+            $m->to('admin@powertime.au')->subject('Powerpod mail test');
+        });
+        return response('Mail dispatched OK', 200);
+    } catch (\Throwable $e) {
+        return response('ERROR: '.$e->getMessage(), 500);
+    }
+});// ->middleware('auth') // optional
 
 /*
 |--------------------------------------------------------------------------
@@ -89,10 +143,7 @@ Route::middleware('guest')->group(function () {
         ->whereIn('provider', ['google','microsoft','facebook'])
         ->name('social.callback');
 });
-    Route::middleware('guest')->group(function () {
-        Route::post('/passkeys/options', [PasskeyLogin::class, 'options'])->name('passkeys.options');
-        Route::post('/passkeys/verify',  [PasskeyLogin::class, 'verify'])->name('passkeys.verify');
-});
+
 
  Route::get('/podcast', function () {
     $row = DB::table('site_settings')->where('key','website')->first();
@@ -147,6 +198,9 @@ Route::middleware(['auth','can:manage-collaborators'])
 
 
 
+
+
+
 Route::middleware(['auth','verified','role:admin'])
     ->prefix('admin')->name('admin.')
     ->group(function () {
@@ -157,12 +211,7 @@ Route::middleware(['auth','verified','role:admin'])
     });
 
 
-Route::middleware('auth')->group(function () {
-        Route::post('/passkeys/register/options', [PasskeyRegister::class, 'options'])->name('passkeys.register.options');
-        Route::post('/passkeys/register',          [PasskeyRegister::class, 'create'])->name('passkeys.register');
-        Route::delete('/passkeys/{credentialId}',  [PasskeyRegister::class, 'destroy'])->name('passkeys.destroy');
-});
-
+ 
 Route::middleware(['auth'])->group(function () {
     Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'index'])->name('settings');
 
@@ -175,18 +224,74 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
-    // Email verification UX (optional)
-    Route::get('/verify-email', fn () => view('auth.verify-email'))->name('verification.notice');
+    // Notice page shown to unverified users
+    Route::get('/email/verify', function () {
+        return view('auth.verify-email');   // create this blade (see §3)
+    })->name('verification.notice');
 
-    Route::get('/verify-email/{id}/{hash}', function (EmailVerificationRequest $request) {
-        $request->fulfill();
-        return redirect()->route('dashboard');
-    })->middleware('signed')->name('verification.verify');
+    // The signed verification link lands here
+    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+        $request->fulfill();                 // marks user as verified
+        return redirect()->intended('/');    // or ->route('dashboard')->with('ok','Email verified')
+    })->middleware(['signed'])->name('verification.verify');
 
+    // “Resend link” action (the one from your Settings page)
     Route::post('/email/verification-notification', function (Request $request) {
+        if ($request->user()->hasVerifiedEmail()) {
+            return back()->with('ok', 'Already verified.');
+        }
         $request->user()->sendEmailVerificationNotification();
-        return back()->with('status', 'verification-link-sent');
+        return back()->with('ok', 'Verification link sent.');
     })->middleware('throttle:6,1')->name('verification.send');
+
+
+    // Social connections
+
+    Route::middleware(['auth','verified'])->group(function () {
+        // Page
+        Route::get('/distribution/social', [SocialShareController::class, 'index'])
+            ->name('distribution.social');
+
+        // Connect / Disconnect
+        Route::post('/social/{provider}/connect', [SocialShareController::class, 'oauthStart'])
+            ->whereIn('provider', SocialShareController::PROVIDERS)
+            ->name('social.oauth.start');
+
+        Route::delete('/social/{provider}', [SocialShareController::class, 'disconnect'])
+            ->whereIn('provider', SocialShareController::PROVIDERS)
+            ->name('social.disconnect');
+
+        // Create a post (queued delivery to services)
+        Route::post('/distribution/social/post', [SocialShareController::class, 'createPost'])
+            ->name('distribution.social.post');
+
+        // Lightweight AI “enhance” helper
+        Route::post('/ai/enhance/social', [AiEnhanceController::class, 'enhance'])
+            ->name('ai.enhance.social');
+    });
+        Route::middleware(['auth','verified'])->group(function () {
+            Route::get('/distribution/social', [SocialShareController::class,'index'])
+                ->name('distribution.social');
+
+            // LinkedIn OAuth
+            Route::get('/oauth/linkedin/redirect', [LinkedInAuthController::class,'redirect'])
+                ->name('social.linkedin.redirect');
+            Route::get('/oauth/linkedin/callback', [LinkedInAuthController::class,'callback'])
+                ->name('social.linkedin.callback');
+
+            // Generic disconnect (kept from your page)
+            Route::delete('/social/{provider}', [SocialShareController::class,'disconnect'])
+                ->name('social.disconnect');
+
+            // Create a post (will fan-out to connected providers)
+            Route::post('/distribution/social/post', [SocialShareController::class,'createPost'])
+                ->name('distribution.social.post');
+        });
+
+    Route::middleware(['auth'])->get('/debug/sa', function () {
+    return \App\Models\SocialAccount::where('user_id', auth()->id())->get();
+});
+
 
     // Password & profile
     Route::put('/password', [PasswordController::class, 'update'])->name('password.update');

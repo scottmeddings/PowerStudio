@@ -12,8 +12,10 @@
         "laravel/socialite": "^5.23",
         "laravel/tinker": "^2.10.1",
         "socialiteproviders/facebook": "^4.1",
+        "socialiteproviders/linkedin": "*",
         "socialiteproviders/microsoft": "^4.7",
         "socialiteproviders/microsoft-azure": "^5.2",
+        "socialiteproviders/tiktok": "*",
         "stripe/stripe-php": "^17.6"
     },
     "require-dev": {
@@ -22,6 +24,7 @@
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",
         "laravel/sail": "^1.41",
+        "laravel/telescope": "^5.11",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "phpunit/phpunit": "^11.5.3"

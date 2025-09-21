@@ -23,36 +23,55 @@ return [
     ],
 
     // config/services.php
-    'google' => [
-        'client_id'     => env('GOOGLE_CLIENT_ID'),
-        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
-        'redirect'      => env('GOOGLE_REDIRECT_URI'),
-    ],
+  
 
    'openai' => [
     'key'             => env('OPENAI_API_KEY'),
     'timeout'         => env('OPENAI_TIMEOUT', 600),
     'connect_timeout' => env('OPENAI_CONNECT_TIMEOUT', 30),
     ],
+    
     'stripe' => [
         'secret'         => env('STRIPE_SECRET'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
         'connect_account'=> env('STRIPE_CONNECT_ACCOUNT'),
     ],
 
-    'facebook' => [
-    'client_id'     => env('FACEBOOK_CLIENT_ID'),
-    'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
-    'redirect'      => env('FACEBOOK_REDIRECT_URI'), // e.g. http://localhost:8000/auth/facebook/callback
-    ],
+   
     
     // For Microsoft Entra (via SocialiteProviders)
-    'microsoft' => [
-        'client_id'     => env('MICROSOFT_CLIENT_ID'),
-        'client_secret' => env('MICROSOFT_CLIENT_SECRET'),
-        'redirect'      => env('MICROSOFT_REDIRECT_URI'),
-        'tenant'        => env('MICROSOFT_TENANT', 'common'), // 'common' or your tenant ID
+ // config/services.php
+
+    'google' => [
+        'client_id'     => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect'      => env('GOOGLE_REDIRECT_URI'),   // ← was url(...)
     ],
+    'facebook' => [
+        'client_id'     => env('FB_CLIENT_ID'),
+        'client_secret' => env('FB_CLIENT_SECRET'),
+        'redirect'      => env('FB_REDIRECT_URI'),
+    ],
+    'linkedin-openid' => [
+    'client_id'     => env('LINKEDIN_CLIENT_ID'),
+    'client_secret' => env('LINKEDIN_CLIENT_SECRET'),
+    'redirect'      => env('LINKEDIN_REDIRECT_URI', env('APP_URL').'/oauth/linkedin/callback'),
+    // DO NOT add 'scope' here
+    ],
+
+    'twitter' => [
+        'client_id'     => env('TWITTER_CLIENT_ID'),
+        'client_secret' => env('TWITTER_CLIENT_SECRET'),
+        'redirect'      => env('TWITTER_REDIRECT_URI'),
+    ],
+    'tiktok' => [
+        'client_id'     => env('TIKTOK_CLIENT_ID'),
+        'client_secret' => env('TIKTOK_CLIENT_SECRET'),
+        'redirect'      => env('TIKTOK_REDIRECT_URI'),
+    ],
+
+
+
 
 
     'ses' => [

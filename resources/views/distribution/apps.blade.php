@@ -68,8 +68,8 @@
     @php
       $slug = $dir['slug'];
       $connectedNow = $is($slug);
-      $bgClass = $dir['icon'] ?? '';                 // keeps your color classes (pi-apple etc.)
-      $bi = $brandIcons[$slug] ?? null;              // bootstrap icon class if we have it
+      $bgClass = $dir['icon'] ?? '';   // keeps your color classes (pi-apple etc.)
+      $bi = $brandIcons[$slug] ?? null; // bootstrap icon class if we have it
       $monogram = strtoupper(mb_substr($dir['name'],0,1));
     @endphp
 
@@ -99,7 +99,7 @@
             class="btn btn-{{ $connectedNow ? 'outline-secondary' : 'dark' }} btn-sm"
             data-bs-toggle="modal"
             data-bs-target="#dirModal-{{ $slug }}">
-            {{ $connectedNow ? 'Manage' : 'Submit' }}
+            Connect
           </button>
         </div>
       </div>
@@ -123,7 +123,7 @@
 
           <div class="modal-header">
             <h5 id="dirModalLabel-{{ $slug }}" class="modal-title">
-              {{ $connectedNow ? 'Manage' : 'Submit' }} — {{ $dir['name'] }}
+              Connect — {{ $dir['name'] }}
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
@@ -178,7 +178,7 @@
 <script>
   document.getElementById('copyRssBtn')?.addEventListener('click', () => {
     const i = document.getElementById('rssInput');
-    i.select(); i.setSelectionRange(0, 99999);
+    i?.select(); i?.setSelectionRange(0, 99999);
     if (navigator.clipboard) navigator.clipboard.writeText(i.value);
     else document.execCommand('copy');
   });

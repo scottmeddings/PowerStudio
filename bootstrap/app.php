@@ -7,13 +7,20 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
+    ->withProviders([
+        \Laragear\WebAuthn\WebAuthnServiceProvider::class,
+    ])
+
     ->withRouting(
+      
         // Keep your current routing; add API if/when you need it.
         web: __DIR__ . '/../routes/web.php',
         // api: __DIR__ . '/../routes/api.php', // <- optional
         commands: __DIR__ . '/../routes/console.php',
         health: '/up',
     )
+
+    
     ->withMiddleware(function (Middleware $middleware) {
         // Route middleware aliases (Laravel 12 style)
         $middleware->alias([

@@ -11,84 +11,47 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-// Passkeys (WebAuthn)
+// Laragear WebAuthn v4
+use Laragear\WebAuthn\Contracts\WebAuthnAuthenticatable;
 use Laragear\WebAuthn\WebAuthnAuthentication;
-use Laragear\WebAuthn\Enums\UserVerification;
 
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable implements MustVerifyEmail, WebAuthnAuthenticatable
 {
     use HasFactory, Notifiable, WebAuthnAuthentication;
 
-    /**
-     * Require real user verification (Windows Hello / Touch ID / etc).
-     * You can relax this to UserVerification::Preferred if desired.
-     */
-    protected UserVerification $webauthnUserVerification = UserVerification::Required;
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Roles
-    // ─────────────────────────────────────────────────────────────────────────────
+    // ── Roles ───────────────────────────────────────────────────────────────────
     public const ROLE_ADMIN    = 'admin';
     public const ROLE_CREATOR  = 'creator';
     public const ROLE_READONLY = 'readonly';
-    public const ROLE_USER     = 'user'; // baseline
+    public const ROLE_USER     = 'user';
 
     public static function allowedRoles(): array
     {
-        return [
-            self::ROLE_ADMIN,
-            self::ROLE_CREATOR,
-            self::ROLE_READONLY,
-            self::ROLE_USER,
-        ];
+        return [self::ROLE_ADMIN, self::ROLE_CREATOR, self::ROLE_READONLY, self::ROLE_USER];
     }
 
-    // Convenience checks
     public function isAdmin(): bool    { return $this->role === self::ROLE_ADMIN; }
     public function isCreator(): bool  { return $this->role === self::ROLE_CREATOR; }
     public function isReadonly(): bool { return $this->role === self::ROLE_READONLY; }
     public function isUser(): bool     { return $this->role === self::ROLE_USER; }
 
-    // Simple “capabilities” helpers you can expand later
-    public function canManageUsers(): bool   { return $this->isAdmin(); }
-    public function canEditContent(): bool   { return $this->isAdmin() || $this->isCreator(); }
-    public function canViewContent(): bool   { return true; } // everyone may view by default
+    public function canManageUsers(): bool { return $this->isAdmin(); }
+    public function canEditContent(): bool { return $this->isAdmin() || $this->isCreator(); }
+    public function canViewContent(): bool { return true; }
 
-    // Query scopes
     public function scopeAdmins($q)   { return $q->where('role', self::ROLE_ADMIN); }
     public function scopeCreators($q) { return $q->where('role', self::ROLE_CREATOR); }
     public function scopeReadonly($q) { return $q->where('role', self::ROLE_READONLY); }
     public function scopeUsers($q)    { return $q->where('role', self::ROLE_USER); }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Mass assignment / defaults / casts
-    // ─────────────────────────────────────────────────────────────────────────────
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'role',                // ← important for managing roles
-        // 'profile_photo_path',
-        // 'cover_path',
-        // 'cover_url',
-        // 'podcast_cover_url',
-    ];
+    // ── Mass assignment / casts ─────────────────────────────────────────────────
+    protected $fillable   = ['name', 'email', 'password', 'role'];
+    protected $attributes = ['role' => self::ROLE_USER];
 
-    protected $attributes = [
-        'role' => self::ROLE_USER, // default baseline
-    ];
+    protected $hidden = ['password', 'remember_token'];
 
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-
-    protected $appends = [
-        'profile_photo_url',
-        'avatar_url',
-        'cover_image_url',
-        'display_name',
-    ];
+    // These are used in your blades; keep them here so they're included on toArray()/JSON.
+    protected $appends = ['profile_photo_url', 'avatar_url', 'cover_image_url', 'display_name'];
 
     protected function casts(): array
     {
@@ -99,9 +62,7 @@ class User extends Authenticatable implements MustVerifyEmail
         ];
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ─────────────────────────────────────────────────────────────────────────────
+    // ── Relationships ───────────────────────────────────────────────────────────
     public function collaborator(): HasOne
     {
         return $this->hasOne(\App\Models\Collaborator::class);
@@ -112,13 +73,13 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(\App\Models\Episode::class)->latest();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Accessors
-    // ─────────────────────────────────────────────────────────────────────────────
     /**
-     * Public cover image (podcast artwork) URL.
-     * Priority: podcast_cover_url > cover_url > storage file > null.
+     * Passkeys relation is provided by the WebAuthnAuthentication trait:
+     * $this->webAuthnCredentials(): \Illuminate\Database\Eloquent\Relations\HasMany
+     * (kept here as a reminder; no need to re-declare)
      */
+
+    // ── Accessors ───────────────────────────────────────────────────────────────
     public function getCoverImageUrlAttribute(): ?string
     {
         if (!empty($this->podcast_cover_url)) return $this->podcast_cover_url;
@@ -127,9 +88,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return null;
     }
 
-    /**
-     * Profile photo URL with Gravatar fallback.
-     */
     public function getProfilePhotoUrlAttribute(): string
     {
         if (!empty($this->profile_photo_path)) {
@@ -143,19 +101,17 @@ class User extends Authenticatable implements MustVerifyEmail
         $hash = md5(strtolower(trim((string) $this->email)));
         return "https://www.gravatar.com/avatar/{$hash}?s=240&d=mp";
     }
-
-    /**
-     * Alias for templates: $user->avatar_url.
-     */
+    public function socialAccounts()
+    {
+        return $this->hasMany(\App\Models\SocialAccount::class);
+    }
+        
     public function getAvatarUrlAttribute(): string
     {
         return $this->profile_photo_url;
     }
+    
 
-    /**
-     * Handy display name fallback: "Scott Meddings" → provided,
-     * otherwise "scott" → "Scott".
-     */
     public function getDisplayNameAttribute(): string
     {
         if (!empty($this->name)) {

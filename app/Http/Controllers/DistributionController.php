@@ -71,6 +71,32 @@ class DistributionController extends Controller
 
         return back()->with('success', ucfirst($slug) . ' settings saved.');
     }
+    public function storeSocialPost(Request $r)
+    {
+        $data = $r->validate([
+            'title'        => 'nullable|string|max:160',
+            'episode_url'  => 'nullable|url|max:2048',
+            'body'         => 'required|string|max:8000',
+            'visibility'   => 'nullable|in:public,connections,private',
+            'services'     => 'required|array|min:1',
+            'services.*'   => 'in:x,linkedin,facebook,instagram,threads,youtube,tiktok',
+            'video'        => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/webm|max:5242880', // 5120MB
+        ]);
+
+        // Store file temporarily if present (so your fan-out job can upload to YouTube/TikTok)
+        $videoPath = null;
+        if ($r->hasFile('video')) {
+            $videoPath = $r->file('video')->store('social-videos', ['disk' => 'local']); // or s3
+        }
+
+        // Persist + dispatch your fan-out job (example)
+        // SocialPost::create([...]);
+        // dispatch(new FanOutSocialPostJob($r->user()->id, $data, $videoPath));
+
+        return back()->with('ok', 'Post created. Fan-out dispatch started.');
+    }
+
+  
 
     /** DELETE: disconnect a directory (Podcast Apps) */
     public function disconnect(Request $request, string $slug)

@@ -6,9 +6,19 @@ use Illuminate\Foundation\Support\Providers\EventServiceProvider as BaseEventSer
 
 class EventServiceProvider extends BaseEventServiceProvider
 {
-    protected $listen = [
+    protected $listen = [ 
+        
+        
+        Illuminate\Notifications\Events\NotificationSending::class => [
+        App\Listeners\LogNotificationSending::class,
+        ],
+        Illuminate\Notifications\Events\NotificationSent::class => [
+        App\Listeners\LogNotificationSent::class,
+        ],
+
+
         \SocialiteProviders\Manager\SocialiteWasCalled::class => [
-            \SocialiteProviders\Microsoft\MicrosoftExtendSocialite::class.'@handle',
+        \SocialiteProviders\Microsoft\MicrosoftExtendSocialite::class.'@handle',
         ],
     ];
 
