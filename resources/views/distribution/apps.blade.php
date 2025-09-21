@@ -19,6 +19,13 @@
     ['slug'=>'pandora','name'=>'Pandora','icon'=>'pi-pand','connected'=>false,'external_url'=>null],
   ]);
 
+  // Remove unwanted directories from UI
+  $hideSlugs = ['pocketcasts','overcast','castbox','deezer','pandora'];
+  $directories = collect($directories)->reject(function ($d) use ($hideSlugs) {
+      $slug = is_array($d) ? ($d['slug'] ?? null) : (is_object($d) ? ($d->slug ?? null) : null);
+      return in_array($slug, $hideSlugs, true);
+  })->values();
+
   $rss = $rss ?? url('/feed/podcast.xml');
 
   // Optional map from controller: ['spotify'=>true, ...]
@@ -99,7 +106,7 @@
             class="btn btn-{{ $connectedNow ? 'outline-secondary' : 'dark' }} btn-sm"
             data-bs-toggle="modal"
             data-bs-target="#dirModal-{{ $slug }}">
-            Connect
+            {{ $connectedNow ? 'Manage' : 'Connect' }}
           </button>
         </div>
       </div>
@@ -123,7 +130,7 @@
 
           <div class="modal-header">
             <h5 id="dirModalLabel-{{ $slug }}" class="modal-title">
-              Connect — {{ $dir['name'] }}
+              {{ $connectedNow ? 'Manage — ' : 'Connect — ' }} {{ $dir['name'] }}
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
@@ -176,10 +183,11 @@
 
 @push('scripts')
 <script>
+  // (Optional) RSS copy helper — wire this up only if you add an RSS input with id="rssInput"
   document.getElementById('copyRssBtn')?.addEventListener('click', () => {
     const i = document.getElementById('rssInput');
     i?.select(); i?.setSelectionRange(0, 99999);
-    if (navigator.clipboard) navigator.clipboard.writeText(i.value);
+    if (navigator.clipboard && i?.value) navigator.clipboard.writeText(i.value);
     else document.execCommand('copy');
   });
 </script>

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\EpisodeChapter;
 use App\Models\EpisodeTranscript;
 use App\Models\Concerns\BelongsToOwner;
+use Illuminate\Database\Eloquent\Builder; // <-- import THIS Builder
+
 
 
 class Episode extends \App\Models\TenantModel
@@ -21,11 +23,22 @@ class Episode extends \App\Models\TenantModel
 
  
   
-    protected $fillable = ['title','...','user_id']; // keep user_id fillable if you import/migrate
+   protected $fillable = ['title','...','user_id']; // keep user_id fillable if you import/migrate
+
+   public function scopePublishedWithAudio(Builder $q): Builder
+    {
+        return $q->whereNotNull('published_at')
+                 ->where('published_at', '<=', now())
+                 ->whereNotNull('playable_url'); // adjust to your schema
+                 // or ->whereHas('media', fn (Builder $m) => $m->where('kind','audio')->whereNotNull('url'));
+    }
+  
+    public function newEloquentBuilder($query): EpisodeBuilder
+    {
+        return new EpisodeBuilder($query);
+    }
 
    
-  
-
     // app/Models/Episode.php
 
 
