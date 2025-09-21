@@ -49,6 +49,8 @@ use App\Http\Controllers\Auth\SocialOAuthController;
 use App\Http\Controllers\SocialShareController;
 use App\Http\Controllers\AiEnhanceController;
 use App\Http\Controllers\LinkedInAuthController;
+use App\Http\Controllers\FacebookPublishSetupController;
+use App\Http\Controllers\XAuthController;
 
 
 
@@ -268,7 +270,7 @@ Route::middleware('auth')->group(function () {
         // Lightweight AI “enhance” helper
         Route::post('/ai/enhance/social', [AiEnhanceController::class, 'enhance'])
             ->name('ai.enhance.social');
-    });
+        });
         Route::middleware(['auth','verified'])->group(function () {
             Route::get('/distribution/social', [SocialShareController::class,'index'])
                 ->name('distribution.social');
@@ -290,8 +292,22 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware(['auth'])->get('/debug/sa', function () {
     return \App\Models\SocialAccount::where('user_id', auth()->id())->get();
-});
+    });
 
+    Route::middleware('auth')->group(function () {
+        Route::get('/oauth/x/redirect', [XAuthController::class, 'redirect'])->name('social.x.redirect');
+        Route::get('/oauth/x/callback', [XAuthController::class, 'callback'])->name('social.x.callback');
+
+        // “Fix publish” just points to the same redirect (forces re-consent with write)
+        Route::get('/oauth/x/upgrade',  [XAuthController::class, 'redirect'])->name('social.x.upgrade');
+    });
+
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/oauth/facebook/select-page',  [FacebookPublishSetupController::class, 'selectPage'])
+            ->name('social.facebook.select_page');
+        Route::post('/oauth/facebook/select-page', [FacebookPublishSetupController::class, 'save'])
+            ->name('social.facebook.select_page.save');
+    });
 
     // Password & profile
     Route::put('/password', [PasswordController::class, 'update'])->name('password.update');

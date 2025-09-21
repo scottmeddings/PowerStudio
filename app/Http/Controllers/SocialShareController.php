@@ -8,6 +8,8 @@ use App\Models\SocialAccount;
 use App\Models\SocialPost;
 use Illuminate\Http\Request;
 use App\Jobs\PublishToLinkedInJob;  
+use App\Jobs\PublishToFacebookJob;  
+use App\Jobs\PublishToXJob;  
 
 class SocialShareController extends Controller
 {
@@ -60,10 +62,16 @@ class SocialShareController extends Controller
         return back()->with('ok', ucfirst($provider).' disconnected.');
     }
 
-        public function createPost(Request $req)
+    public function createPost(Request $req)
     {
         $user = $req->user();
-        $services = collect($req->input('services', []))->map(fn($s)=>strtolower($s))->unique()->values()->all();
+
+        $services = collect($req->input('services', []))
+            ->map(fn($s) => strtolower(trim($s)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $post = SocialPost::create([
             'user_id'     => $user->id,
@@ -73,16 +81,33 @@ class SocialShareController extends Controller
             'visibility'  => (string) $req->input('visibility', 'public'),
             'services'    => $services,
             'status'      => 'queued',
+            'assets'      => [],
         ]);
 
-        if (in_array('linkedin', $services, true) &&
-            $user->socialAccounts()->where('provider','linkedin')->exists()) {
+        $errors = [];
 
-            // Correct namespace
-            PublishToLinkedInJob::dispatch($post->id)->onQueue('default');
+        
+
+        // helper to check a connected account exists
+        // In controller rendering the page
+        $accounts = auth()->user()->socialAccounts()->get();
+        $publishable = collect(['x'=>false,'facebook'=>false,'linkedin'=>false,'instagram'=>false,'threads'=>false,'youtube'=>false,'tiktok'=>false]);
+
+        foreach ($accounts as $a) {
+        if ($a->provider === 'x' && in_array('tweet.write', (array)($a->meta['scopes'] ?? []), true)) {
+            $publishable['x'] = true;
         }
+        if ($a->provider === 'facebook' && ($a->meta['page_id'] ?? $a->external_id) && $a->access_token) {
+            $publishable['facebook'] = true;
+        }
+        if ($a->provider === 'linkedin' && $a->access_token) {
+            $publishable['linkedin'] = true;
+        }
+        }
+        return view('distribution.social', [
+        'socialConnected' => $accounts->pluck('provider')->unique()->values(),
+        'publishable'     => $publishable,
+        ]);
 
-        return redirect()->route('distribution.social')->with('ok','Post created and queued.');
     }
-
 }

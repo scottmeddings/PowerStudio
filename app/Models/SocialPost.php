@@ -14,8 +14,9 @@ class SocialPost extends Model
     ];
 
     protected $casts = [
-        'services' => 'array',
-        'assets'   => 'array',
+    'services' => 'array',
+    'assets'   => 'array',
+    'meta'     => 'array',
     ];
 
     public function user(): BelongsTo
