@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Episode;
+use App\Models\SiteSetting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -15,16 +16,17 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
-use App\Models\SiteSetting;
 use Throwable;
+
+// If this lives elsewhere, adjust the import accordingly:
+use App\Jobs\DownloadEpisodeAssetsJob;
 
 class ImportRssFeedJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    private const PROGRESS_KEY = 'rss_import:progress';
-
-    public int $timeout = 300; // metadata-only now
+    /** Metadata-only now, keep generous enough for big feeds */
+    public int $timeout = 300;
     public int $tries   = 1;
 
     public function __construct(
@@ -41,10 +43,20 @@ class ImportRssFeedJob implements ShouldQueue
             throw new \RuntimeException('episodes.user_id is required.');
         }
 
-        Log::info('[IMPORT] handle()', ['user_id'=>$this->userId, 'feed'=>$this->feedUrl, 'queue'=>$this->queue ?? 'default']);
+        Log::info('[IMPORT] handle()', [
+            'user_id' => $this->userId,
+            'feed'    => $this->feedUrl,
+            'queue'   => $this->queue ?? 'default',
+        ]);
+
         $this->progress(3, 'Fetching feed…');
 
-        $resp = Http::retry(2, 150)->connectTimeout(5)->timeout(30)->get($this->feedUrl);
+        $resp = Http::retry(2, 150)
+            ->connectTimeout(5)
+            ->timeout(30)
+            ->withHeaders(['User-Agent' => 'PodPower/1 (+https://powertime.au)'])
+            ->get($this->feedUrl);
+
         if (!$resp->ok()) {
             throw new \RuntimeException('Feed fetch failed: HTTP '.$resp->status());
         }
@@ -65,7 +77,7 @@ class ImportRssFeedJob implements ShouldQueue
         $userCoverPath = DB::table('users')->where('id', $this->userId)->value('cover_path');
         $userCoverUrl  = $userCoverPath ? $this->publicUrlForPath($userCoverPath) : null;
 
-        // Collect feed items
+        // Collect feed items (RSS/Atom)
         $items = [];
         if (isset($xml->channel->item)) {
             foreach ($xml->channel->item as $i) $items[] = $i;
@@ -330,7 +342,7 @@ class ImportRssFeedJob implements ShouldQueue
                     chaptersUrl:  $p['chapters_url'],
                     transcriptUrl:$p['transcript_url'],
                     slug:         $idx['slug'] ?: $p['slug']
-                )->onQueue('io'); // use a separate worker pool if you like
+                )->onQueue('io'); // separate pool for I/O is nice
             }
         }
 
@@ -345,26 +357,46 @@ class ImportRssFeedJob implements ShouldQueue
 
     /* ----------------- helpers ----------------- */
 
+    /** Per-user key, so concurrent users don’t clash */
+    private function progressKey(): string
+    {
+        $uid = (int) ($this->userId ?? 0);
+        return "rss_import:progress:{$uid}";
+    }
+
     private function progress(?int $percent, string $message): void
     {
         static $lastWrite = 0;
         $nowMs = (int)(microtime(true) * 1000);
+
+        // Write at most every 200ms unless final state
         if ($percent !== 100 && $nowMs - $lastWrite < 200) return;
         $lastWrite = $nowMs;
 
-        $current = Cache::get(self::PROGRESS_KEY, ['percent'=>0,'message'=>'…']);
-        if ($percent === null) $percent = (int) ($current['percent'] ?? 0);
-        Cache::put(self::PROGRESS_KEY, [
-            'percent' => max(0, min(100, $percent)),
-            'message' => $message,
-            'meta'    => ['feed' => $this->feedUrl, 'user_id' => $this->userId],
-        ], now()->addHour());
+        try {
+            $current = Cache::get($this->progressKey(), ['percent'=>0,'message'=>'…']);
+            if ($percent === null) $percent = (int) ($current['percent'] ?? 0);
+
+            Cache::put($this->progressKey(), [
+                'percent' => max(0, min(100, (int)$percent)),
+                'message' => $message,
+                'meta'    => ['feed' => $this->feedUrl, 'user_id' => $this->userId],
+            ], now()->addHour());
+        } catch (\Throwable $e) {
+            // If cache table/store isn’t ready, don’t crash the job.
+            Log::warning('[IMPORT] Progress write failed: '.$e->getMessage());
+        }
     }
 
     private function parseDate(?string $str): ?string
     {
         if (!$str) return null;
-        try { return date('Y-m-d H:i:s', strtotime($str)); } catch (\Throwable) { return null; }
+        try {
+            $ts = strtotime($str);
+            return $ts ? date('Y-m-d H:i:s', $ts) : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function parseItunesDuration(?string $s): ?int
@@ -439,7 +471,9 @@ class ImportRssFeedJob implements ShouldQueue
             return;
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
-            $isConflict = str_contains($msg, 'ON CONFLICT') || str_contains($msg, 'constraint');
+            $isConflict = str_contains($msg, 'ON CONFLICT')
+                       || str_contains($msg, 'constraint')
+                       || str_contains($msg, 'UNIQUE');
             if (!$isConflict) throw $e;
 
             foreach ($rows as $r) {

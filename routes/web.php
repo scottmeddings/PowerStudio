@@ -51,6 +51,7 @@ use App\Http\Controllers\AiEnhanceController;
 use App\Http\Controllers\LinkedInAuthController;
 use App\Http\Controllers\FacebookPublishSetupController;
 use App\Http\Controllers\XAuthController;
+use App\Http\Controllers\Settings\ImportController;
 
 
 
@@ -104,16 +105,7 @@ Route::middleware('auth')->group(function () {
 
 
 
-Route::get('test/_mail-', function () {
-    try {
-        Mail::html('<h2>Powerpod mail test</h2><p>Sent at '.now().'</p>', function ($m) {
-            $m->to('admin@powertime.au')->subject('Powerpod mail test');
-        });
-        return response('Mail dispatched OK', 200);
-    } catch (\Throwable $e) {
-        return response('ERROR: '.$e->getMessage(), 500);
-    }
-});// ->middleware('auth') // optional
+
 
 /*
 |--------------------------------------------------------------------------
@@ -164,18 +156,77 @@ Route::get('/{slug}/feed.xml', [PodcastFeedController::class, 'index'])
     ->name('feed.bySlug');
 
 
+
+
 Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site.episode');
 
-// Public site using the SAVED template
-Route::get('/site', [SiteController::class, 'show'])->name('site.show');
 
-// Preview a specific template without saving
-Route::get('/site/preview/{template}', [SiteController::class, 'preview'])
+
+/*
+|--------------------------------------------------------------------------
+| Website settings (admin)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('distribution/website')
+    ->name('website.')
+    // ->middleware('auth') // enable if needed
+    ->group(function () {
+        Route::get('/', [WebsiteController::class, 'edit'])->name('edit');                // website.edit
+        Route::post('/', [WebsiteController::class, 'update'])->name('update');           // website.update
+        Route::post('/clear-banner', [WebsiteController::class, 'clearBanner'])->name('banner.clear'); // website.banner.clear
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Public site & preview
+|--------------------------------------------------------------------------
+*/
+Route::get('/site', [WebsiteController::class, 'show'])->name('site.show');
+
+Route::get('/site/preview/{template}', [WebsiteController::class, 'preview'])
     ->whereIn('template', ['zen','frontrow','focuspod'])
     ->name('site.preview');
 
 
+Route::prefix('website')->name('website.')->group(function () {
+    Route::get('/themes',  [WebsiteController::class, 'edit'])->name('themes');          // website.themes
+    Route::post('/themes', [WebsiteController::class, 'update'])->name('themes.update'); // website.themes.update
+});
+// Admin/settings
+Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.edit');
+Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.update');
+// Optional alias to satisfy Blade using website.themes.update
+Route::post('/distribution/website/themes', [WebsiteController::class, 'updateThemes'])->name('website.themes.update');
+Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
+Route::post('/distribution/website/quick-select', [WebsiteController::class, 'quickSelect'])
+    ->name('website.themes.quick');  // new JSON endpoint
 
+// Public user-scoped site links (unique per user)
+Route::get('/site/u/{user}/{template}/{slug}', [WebsiteController::class, 'userSite'])
+    ->where(['user'=>'[0-9]+','template'=>'zen|frontrow|focuspod'])
+    ->name('site.user');
+
+Route::get('/distribution/website', [WebsiteController::class, 'edit'])
+    ->name('website.edit');
+
+////Route::post('/distribution/website', [WebsiteController::class, 'update'])
+   // ->name('website.update');
+
+Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])
+    ->name('website.banner.clear');
+
+// Public
+Route::get('/site', [WebsiteController::class, 'show'])->name('site.show');
+Route::get('/site/preview/{template}', [WebsiteController::class, 'preview'])
+    ->whereIn('template', ['zen','frontrow','focuspod'])
+    ->name('site.preview');
+
+/*
+|--------------------------------------------------------------------------
+| Theme alias routes (optional)
+| These map to the same edit/update actions but under /website/themes
+|--------------------------------------------------------------------------
+*/
 
 
 /*
@@ -318,22 +369,15 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    // website
-    Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.themes.edit');
-    Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.themes.update');
-    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
-    Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.edit');
-    Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.update');
-    Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
-    Route::get('/website/themes', [WebsiteController::class, 'edit'])->name('website.themes');
-    Route::post('/website/themes', [WebsiteController::class, 'update'])->name('website.themes.update');
+   
             
 
+    
     Route::middleware(['web','auth','adminlike'])->group(function () {
-        Route::redirect('/settings', '/settings/general')->name('settings');
-        Route::get('/settings/import',        [RssImportController::class, 'show'])->name('settings.import');
-        Route::post('/settings/import',       [RssImportController::class, 'handle'])->name('settings.import.handle');
-        Route::get('/settings/import/status', [RssImportController::class, 'status'])->name('settings.import.status');
+            Route::redirect('/settings', '/settings/general')->name('settings');
+            Route::get('/settings/import',       [ImportController::class, 'show'])->name('settings.import');
+            Route::post('/settings/import/handle',[ImportController::class, 'handle'])->name('settings.import.handle');
+            Route::get('/settings/import/status', [ImportController::class, 'status'])->name('settings.import.status');
     });
 
 

@@ -6,6 +6,10 @@
 
 @section('content')
 @php
+  use Illuminate\Support\Str;
+  use Illuminate\Support\Facades\Storage;
+  use Illuminate\Support\Facades\Route as RouteFacade;
+
   // ---------- SAFE DEFAULTS ----------
   $settings = ($settings ?? []) + [
     'template' => 'zen',
@@ -16,18 +20,41 @@
     'episodes_per_page' => 12,
     'show_subscribe_badges' => true,
     'banner'   => null,
+    'site_slug' => $settings['site_slug'] ?? null,
   ];
 
   $templates = $templates ?? [
-    ['slug'=>'zen','name'=>'Zen 1.0','by'=>'PodPower','img'=>asset('images/themes/zen.jpg'),
-     'desc'=>'Large banner image, simple episode list, fast loads.'],
-    ['slug'=>'frontrow','name'=>'Frontrow','by'=>'PodPower','img'=>asset('images/themes/frontrow.jpg'),
-     'desc'=>'Profile card left, episodes right, great for bios.'],
-    ['slug'=>'focuspod','name'=>'Focuspod','by'=>'PodPower','img'=>asset('images/themes/focuspod.jpg'),
-     'desc'=>'Hero image with grid of episodes and tags.'],
+    ['slug'=>'zen','name'=>'Zen 1.0','by'=>'PodPower','img'=>asset('images/powertime-hero.png'),'desc'=>'Large banner image, simple episode list, fast loads.'],
+    ['slug'=>'frontrow','name'=>'Frontrow','by'=>'PodPower','img'=>asset('images/powertime-hero.png'),'desc'=>'Profile card left, episodes right, great for bios.'],
+    ['slug'=>'focuspod','name'=>'Focuspod','by'=>'PodPower','img'=>asset('images/powertime-hero.png'),'desc'=>'Hero image with grid of episodes and tags.'],
   ];
 
   $current = $settings['template'] ?? 'zen';
+
+  // ---------- PUBLIC LINK (user-scoped & unique) ----------
+  $uid = auth()->id() ?? 'guest';
+  $computedSlug = $settings['site_slug']
+    ?? Str::of(auth()->user()->name ?? ('user-'.$uid))->slug('-')->append('-')->append(substr(md5($uid), 0, 6));
+  $publicBase   = url('/site/u/'.$uid);
+  $publicUrl    = $publicBase.'/'.$current.'/'.$computedSlug;
+
+  // ---------- RESOLVE BANNER URL ----------
+  $resolvedBannerUrl = null;
+  if (isset($bannerUrl) && $bannerUrl) {
+    $resolvedBannerUrl = $bannerUrl;
+  } else {
+    $rawBanner = session('uploaded_banner') ?: ($settings['banner'] ?? null);
+    if (!empty($rawBanner)) {
+      $norm = ltrim(preg_replace('#^public/#i', '', (string)$rawBanner), "/\\");
+      $norm = str_replace('\\','/',$norm);
+      $norm = preg_replace('#/+#','/',$norm);
+      $resolvedBannerUrl = Str::startsWith($norm, ['http://','https://']) ? $norm : Storage::disk('public')->url($norm);
+    }
+  }
+
+  // ---------- ENDPOINTS (safe guards) ----------
+  $updateUrl = route('website.themes.update'); // existing form route
+  $quickUrl  = RouteFacade::has('website.themes.quick') ? route('website.themes.quick') : null; // optional JSON route
 @endphp
 
 @if(session('ok'))
@@ -43,38 +70,47 @@
 @endif
 
 <style>
-  :root{
-    --card-bg:#fff; --card-border:#e9ecef;
-    --fade-top:rgba(0,0,0,.05); --fade-bottom:rgba(0,0,0,.55);
-  }
-  .theme-card{
-    border:1px solid var(--card-border); border-radius:16px; overflow:hidden;
-    background:var(--card-bg); display:flex; flex-direction:column;
-    transition:transform .18s ease, box-shadow .18s ease;
-  }
+  :root{ --card-bg:#fff; --card-border:#e9ecef; --fade-top:rgba(0,0,0,.05); --fade-bottom:rgba(0,0,0,.55); }
+  .theme-card{ border:1px solid var(--card-border); border-radius:16px; overflow:hidden; background:var(--card-bg); display:flex; flex-direction:column; transition:transform .18s ease, box-shadow .18s ease; }
   .theme-card:hover{ transform:translateY(-2px); box-shadow:0 8px 26px rgba(0,0,0,.08); }
   .theme-card.is-current{ border-color:#0ea5e9; }
-
   .theme-cover{ position:relative; aspect-ratio:16/9; background:#eef1f5 center/cover no-repeat; }
   .theme-cover__fade{ position:absolute; inset:0; background:linear-gradient(180deg, var(--fade-top) 0%, var(--fade-bottom) 85%); }
-  .theme-cover__label{ position:absolute; left:12px; bottom:10px; background:rgba(255,255,255,.92);
-    color:#111; font-size:.75rem; padding:.25rem .5rem; border-radius:.5rem; }
-
-  .theme-ribbon{ position:absolute; right:-46px; top:14px; transform:rotate(45deg);
-    background:#0ea5e9; color:#fff; font-weight:600; font-size:.75rem; padding:.35rem 2.2rem;
-    box-shadow:0 6px 18px rgba(14,165,233,.35); }
-
-  /* Modal layering guard without stacks */
+  .theme-cover__label{ position:absolute; left:12px; bottom:10px; background:rgba(255,255,255,.92); color:#111; font-size:.75rem; padding:.25rem .5rem; border-radius:.5rem; }
+  .theme-ribbon{ position:absolute; right:-46px; top:14px; transform:rotate(45deg); background:#0ea5e9; color:#fff; font-weight:600; font-size:.75rem; padding:.35rem 2.2rem; box-shadow:0 6px 18px rgba(14,165,233,.35); }
   .modal{ z-index:1065 !important; }
   .modal-backdrop{ z-index:1060 !important; }
   .modal-backdrop.show{ opacity:.15; }
+  .copy-btn{ white-space:nowrap; }
 </style>
+
+{{-- ======= PUBLIC LINK CARD (TOP) ======= --}}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <label for="publicLink" class="form-label mb-2">
+      Public website link <small class="text-muted"></small>
+    </label>
+    <div class="input-group">
+      <input id="publicLink" type="text" class="form-control" value="{{ $publicUrl }}" readonly>
+      <a id="openPublicLink" href="{{ $publicUrl }}" target="_blank" rel="noopener" class="btn btn-outline-secondary">Open</a>
+      <button id="copyPublicLink" type="button" class="btn btn-outline-primary copy-btn">
+        <i class="bi bi-clipboard"></i> Copy
+      </button>
+    </div>
+    <small class="text-muted">
+    </small>
+  </div>
+</div>
 
 <div class="row g-4 align-items-stretch">
   @foreach($templates as $tpl)
+    @php
+      $previewImg = $resolvedBannerUrl ?: $tpl['img'];
+      $tplUrl     = $publicBase.'/'.$tpl['slug'].'/'.$computedSlug;
+    @endphp
     <div class="col-12 col-md-6 col-xl-4 d-flex">
       <div class="theme-card shadow-sm flex-fill {{ $current === $tpl['slug'] ? 'is-current' : '' }}">
-        <div class="theme-cover" style="background-image:url('{{ $tpl['img'] }}')">
+        <div class="theme-cover" style="background-image:url('{{ $previewImg }}')">
           <div class="theme-cover__fade"></div>
           <span class="theme-cover__label">{{ $tpl['name'] }} preview</span>
           @if($current === $tpl['slug'])
@@ -93,21 +129,25 @@
           <p class="mt-3 mb-4 text-secondary small">{{ $tpl['desc'] }}</p>
 
           <div class="mt-auto d-flex gap-2">
-            <button
-              class="btn btn-outline-primary btn-sm px-3"
-              type="button"
-              data-bs-toggle="modal"
-              data-bs-target="#settingsModal"
-              data-template="{{ $tpl['slug'] }}">
+            <button class="btn btn-outline-primary btn-sm px-3" type="button"
+                    data-bs-toggle="modal" data-bs-target="#settingsModal"
+                    data-template="{{ $tpl['slug'] }}">
               Customize
             </button>
 
-            {{-- Open preview (no save) --}}
-            <a href="{{ route('site.preview', ['template' => $tpl['slug']]) }}"
-               class="btn btn-secondary btn-sm px-3 ms-auto"
-               target="_blank" rel="noopener">
-              Use Template
+            {{-- Preview opens the user-scoped URL --}}
+            <a href="{{ $tplUrl }}" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm px-3">
+              Preview
             </a>
+
+            {{-- Use Template: persist (quick JSON if present; fallback to normal update) --}}
+            <button type="button"
+                    class="btn btn-secondary btn-sm px-3 ms-auto js-use-template"
+                    data-template="{{ $tpl['slug'] }}"
+                    data-url="{{ $tplUrl }}">
+              Use Template
+            </button>
           </div>
         </div>
       </div>
@@ -115,36 +155,34 @@
   @endforeach
 </div>
 
-{{-- Modal inline (no stacks); we’ll reparent to <body> for safe z-index --}}
+{{-- Modal --}}
 <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
-    <form class="modal-content" action="{{ route('website.themes.update') }}" method="post" enctype="multipart/form-data" novalidate>
+    <form class="modal-content" action="{{ $updateUrl }}" method="post" enctype="multipart/form-data" novalidate>
       @csrf
+      <input type="hidden" id="tpl-input" name="template" value="{{ $settings['template'] }}">
+      <input type="hidden" id="clear-banner-input" name="clear_banner" value="0">
+
       <div class="modal-header">
         <h5 class="modal-title" id="settingsModalTitle">Customize Website</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
       <div class="modal-body">
-        <input type="hidden" id="tpl-input" name="template" value="{{ $settings['template'] }}">
-
         <div class="row g-3">
           <div class="col-md-8">
             <label class="form-label">Site title</label>
             <input name="title" class="form-control" value="{{ old('title', $settings['title']) }}">
           </div>
-
           <div class="col-md-4">
             <label class="form-label">Brand color</label>
             <input name="brand" type="text" class="form-control" value="{{ old('brand', $settings['brand']) }}" placeholder="#7c3aed">
           </div>
-
           <div class="col-12">
             <label class="form-label">Font stack</label>
             <input name="font" class="form-control" value="{{ old('font', $settings['font']) }}">
             <small class="text-muted">Comma-separated CSS font-family.</small>
           </div>
-
           <div class="col-md-6">
             <label class="form-label d-block">Layout</label>
             <div class="btn-group" role="group">
@@ -154,39 +192,32 @@
               <label class="btn btn-outline-primary" for="layoutGrid">Grid</label>
             </div>
           </div>
-
           <div class="col-md-6">
             <label class="form-label">Episodes per page</label>
             <input type="number" class="form-control" name="episodes_per_page" min="6" max="48" value="{{ old('episodes_per_page', $settings['episodes_per_page']) }}">
           </div>
-
           <div class="col-12">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="badges" name="show_subscribe_badges" value="1" {{ old('show_subscribe_badges', $settings['show_subscribe_badges']) ? 'checked' : '' }}>
               <label class="form-check-label" for="badges">Show subscribe badges (Apple, Spotify, YouTube Music, etc.)</label>
             </div>
           </div>
-
           <div class="col-12">
             <label class="form-label">Banner image (optional)</label>
             <input type="file" class="form-control" name="banner" accept="image/*">
-            @if(!empty($settings['banner']))
-              <small class="text-muted d-block mt-2">Current: <code>{{ $settings['banner'] }}</code></small>
-              <img class="img-fluid rounded mt-2" src="{{ asset('storage/'.$settings['banner']) }}" alt="Current banner">
+            @if(!empty($settings['banner']) || session('uploaded_banner'))
+              <small class="text-muted d-block mt-2">Current: <code>{{ session('uploaded_banner') ?: ($settings['banner'] ?? '') }}</code></small>
+              @if($resolvedBannerUrl)
+                <img class="img-fluid rounded mt-2" src="{{ $resolvedBannerUrl }}" alt="Current banner">
+              @endif
               <div class="mt-2">
-                <form action="{{ route('website.banner.clear') }}" method="post">
-                  @csrf
-                  <button class="btn btn-outline-danger btn-sm" type="submit">Remove banner</button>
-                </form>
+                <button type="button" id="remove-banner-btn" class="btn btn-outline-danger btn-sm">Remove banner</button>
               </div>
             @endif
           </div>
-
           <div class="col-12">
             <hr>
-            <small class="text-muted">
-              Tip: You can switch templates anytime. Your title, brand color, and content persist.
-            </small>
+            <small class="text-muted">Tip: You can switch templates anytime. Your title, brand color, and content persist.</small>
           </div>
         </div>
       </div>
@@ -200,24 +231,118 @@
 </div>
 
 <script>
-  (function () {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) return;
+(function () {
+  const modal = document.getElementById('settingsModal');
+  if (modal && modal.parentElement && modal.parentElement.tagName !== 'BODY') {
+    document.body.appendChild(modal);
+  }
 
-    // Ensure modal is a direct child of <body> (avoids z-index/transform traps)
-    if (modal.parentElement && modal.parentElement.tagName !== 'BODY') {
-      document.body.appendChild(modal);
+  // Inject template slug when opening Customize
+  modal?.addEventListener('show.bs.modal', function (event) {
+    const btn = event.relatedTarget;
+    const tpl = btn && btn.getAttribute('data-template');
+    if (tpl) document.getElementById('tpl-input').value = tpl;
+  });
+
+  // Remove banner without nested forms (set hidden field)
+  const removeBtn = document.getElementById('remove-banner-btn');
+  removeBtn?.addEventListener('click', function () {
+    const clearInput = document.getElementById('clear-banner-input');
+    if (clearInput) clearInput.value = '1';
+    const fileInput = modal.querySelector('input[type="file"][name="banner"]');
+    if (fileInput) fileInput.value = '';
+  });
+
+  // Copy public link
+  const copyBtn = document.getElementById('copyPublicLink');
+  const linkInput = document.getElementById('publicLink');
+  copyBtn?.addEventListener('click', async function () {
+    try { linkInput.select(); linkInput.setSelectionRange(0, 99999);
+      await navigator.clipboard.writeText(linkInput.value);
+      copyBtn.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied';
+      setTimeout(() => copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy', 1500);
+    } catch (e) { document.execCommand('copy'); }
+  });
+
+  // ===== Helpers =====
+  const q  = (s, c) => (c||document).querySelector(s);
+  const qa = (s, c) => Array.from((c||document).querySelectorAll(s));
+  function ensureRibbon(card, on){
+    const cover = card.querySelector('.theme-cover') || card;
+    let r = card.querySelector('.theme-ribbon');
+    if (on) {
+      if (!r) { r = document.createElement('span'); r.className = 'theme-ribbon'; r.textContent = 'Current'; cover.appendChild(r); }
+    } else if (r) { r.remove(); }
+  }
+  function markCurrent(tpl, url, card){
+    qa('.theme-card').forEach(c => { c.classList.remove('is-current'); ensureRibbon(c, false); });
+    if (card) { card.classList.add('is-current'); ensureRibbon(card, true); }
+    if (url) {
+      const input = q('#publicLink'); const open = q('#openPublicLink');
+      if (input) input.value = url;
+      if (open)  open.setAttribute('href', url);
     }
+    const tplHidden = q('#tpl-input'); if (tplHidden && tpl) tplHidden.value = tpl;
+  }
+  function getCsrf() {
+    const i = document.querySelector('input[name="_token"]');
+    if (i?.value) return i.value;
+    const m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.getAttribute('content') : '';
+  }
 
-    // Inject template slug when opening Customize
-    modal.addEventListener('show.bs.modal', function (event) {
-      const btn = event.relatedTarget;
-      const tpl = btn && btn.getAttribute('data-template');
-      if (tpl) {
-        const hidden = document.getElementById('tpl-input');
-        if (hidden) hidden.value = tpl;
+  // Endpoint URLs (Blade-injected)
+  const ENDPOINT_QUICK  = @json($quickUrl);   // may be null
+  const ENDPOINT_UPDATE = @json($updateUrl);  // exists
+
+  // ===== Use Template: persist to DB, then mark blue Current =====
+  qa('.js-use-template').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tpl  = btn.getAttribute('data-template');
+      const url  = btn.getAttribute('data-url'); // fallback
+      const card = btn.closest('.theme-card');
+      const csrf = getCsrf();
+
+      const original = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = 'Saving…';
+
+      try {
+        const endpoint = ENDPOINT_QUICK || ENDPOINT_UPDATE;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'X-CSRF-TOKEN': csrf,
+            'Accept': ENDPOINT_QUICK ? 'application/json' : 'text/html',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          body: new URLSearchParams({
+            template: tpl,
+            site_slug: @json($computedSlug),
+          }),
+        });
+
+        if (res.status >= 400) throw new Error('Save failed');
+
+        // Prefer canonical URL from JSON quick endpoint; else fallback to precomputed url
+        let liveUrl = url;
+        if (ENDPOINT_QUICK) {
+          try {
+            const json = await res.json();
+            if (json?.public_url) liveUrl = json.public_url;
+          } catch (_) { /* non-fatal; fallback to url */ }
+        }
+
+        markCurrent(tpl, liveUrl, card);
+        btn.innerHTML = 'Saved';
+        setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 900);
+      } catch (e) {
+        console.error(e);
+        alert('Sorry—could not save this template. Please try again.');
+        btn.innerHTML = original; btn.disabled = false;
       }
     });
-  }());
+  });
+})();
 </script>
 @endsection

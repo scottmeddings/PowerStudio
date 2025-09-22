@@ -1,17 +1,34 @@
 <?php
-
+// app/Models/SiteSetting.php
 namespace App\Models;
 
-class SiteSetting extends Setting
+use Illuminate\Database\Eloquent\Model;
+
+class SiteSetting extends Model
 {
-    /** Back-compat for old helpers */
-    public static function getValue(string $key, $default = null)
+    protected $table = 'settings';           // <-- IMPORTANT: use ONE table
+    public $timestamps = false;
+
+    protected $fillable = ['user_id', 'key', 'value'];
+
+    // Value is stored as JSON
+    protected $casts = ['value' => 'array'];
+
+    public static function getValue(string $key, $default = null, ?int $userId = null)
     {
-        return parent::get($key, $default);
+        $row = static::query()
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
+            ->where('key', $key)
+            ->first();
+
+        return $row?->value ?? $default;
     }
 
-    public static function putValue(string $key, $value): void
+    public static function setValue(string $key, $value, ?int $userId = null): void
     {
-        parent::set($key, $value);
+        static::updateOrCreate(
+            ['user_id' => $userId, 'key' => $key],
+            ['value' => $value]
+        );
     }
 }
