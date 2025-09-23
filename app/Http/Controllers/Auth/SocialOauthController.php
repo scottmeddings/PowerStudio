@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Socialite\Facades\Socialite;
 
-class SocialConnectController extends Controller
+class SocialOauthController extends Controller
 {
     public function redirect(string $provider)
     {

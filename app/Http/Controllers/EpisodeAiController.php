@@ -8,7 +8,7 @@ use App\Models\Episode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 
-class EpisodeAIController extends Controller
+class EpisodeAiController extends Controller
 {
     /* ----- cache keys helpers (must match the Job) ----- */
     private function progressKey(Episode $e): string { return "ai:{$e->id}:progress"; }
