@@ -12,11 +12,7 @@ use Illuminate\Support\Str;                    // ← for stub tokens
 
 class DistributionController extends Controller
 {
-    /** Landing page: /distribution */
-    public function index()
-    {
-        return view('distribution.index');
-    }
+    
     public function player(Request $req)
     {
         $limit = (int) $req->integer('limit', 10);

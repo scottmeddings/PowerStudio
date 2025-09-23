@@ -199,26 +199,26 @@
           <ul class="list-unstyled my-2">
             <li>
               <a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}"
-                 href="{{ $appsUrl }}">
+                 href="{{ url('/distribution/apps') }}">
                 <i class="bi bi-app-indicator me-2"></i>Podcast Apps
                 <span class="ms-2 align-middle" style="color:#ef4444;">•</span>
               </a>
             </li>
             <li>
               <a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}"
-                 href="{{ $socialUrl }}">
+                 href="{{ url('/distribution/social') }}">
                 <i class="bi bi-share me-2"></i>Social Share
               </a>
             </li>
             <li>
               <a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}"
-                 href="{{ $websiteUrl }}">
+                 href="{{ url('/distribution/website') }}">
                 <i class="bi bi-globe2 me-2"></i>Podcast Website
               </a>
             </li>
             <li>
               <a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}"
-                 href="{{ $playerUrl }}">
+                 href="{{ url('/distribution/player') }}">
                 <i class="bi bi-play-btn me-2"></i>Embeddable Player
               </a>
             </li>
