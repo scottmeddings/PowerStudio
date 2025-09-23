@@ -3,17 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Episode;
-use App\Models\Download; // <-- NEW
+use App\Models\Download;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;   // ✅ correct
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 class EpisodeController extends Controller
 {
-    
     public function index(Request $request)
     {
         $episodes = Episode::query()
@@ -23,9 +22,12 @@ class EpisodeController extends Controller
             ->latest()
             ->paginate(10);
 
-        // use the view where your table lives
-        return view('pages.episodes', compact('episodes'));
+        // Optional: top episodes by early downloads (week/month)
+        $topEpisodes = $this->topEpisodesEarlyDownloads(auth()->id(), 8);
+
+        return view('pages.episodes', compact('episodes', 'topEpisodes'));
     }
+
     public function create()
     {
         return view('episodes.create');
@@ -43,7 +45,7 @@ class EpisodeController extends Controller
             'status'           => ['required', 'in:draft,published'],
             'published_at'     => ['nullable', 'date'],
             'cover'            => ['nullable', 'image'],
-            // NOTE: no 'plays' here anymore — it's derived from downloads
+            // NOTE: no 'plays' here — it's derived from downloads
         ]);
     }
 
@@ -138,12 +140,8 @@ class EpisodeController extends Controller
     }
 
     public function show(Episode $episode)
-
     {
-        $episodes = Episode::where('user_id', auth()->id())
-        ->withCount('downloads')   // <- gives $ep->downloads_count
-        ->latest()
-        ->paginate(10);
+        $this->authorizeOwnership($episode);
         $episode->load(['comments' => fn($q) => $q->approved()->latest()->with('user:id,name')]);
         return view('pages.episode_show', compact('episode'));
     }
@@ -182,43 +180,154 @@ class EpisodeController extends Controller
     /* ---------------------- Downloads tracking ---------------------- */
 
     /**
-     * Route this in web.php:
+     * Route in web.php:
      * Route::get('/episodes/{episode}/download', [EpisodeController::class, 'download'])->name('episodes.download');
-     *
-     * Point your player/button at route('episodes.download', $episode) instead of raw audio_url.
      */
-   public function download(Request $request, Episode $episode)
-{
-    if (! $episode->audio_url) {
-        return back()->withErrors(['audio_url' => 'No audio URL available for this episode.']);
-    }
+    public function download(Request $request, Episode $episode)
+    {
+        $this->authorizeOwnership($episode);
 
-    $ip      = $request->ip();
-    $country = $request->header('CF-IPCountry') ?: $request->header('X-App-Country') ?: null;
-
-    // de-dupe by IP in 12h window
-    $exists = $episode->downloads()
-        ->where('ip', $ip)
-        ->where('created_at', '>=', now()->subHours(1))
-        ->exists();
-
-    if (! $exists) {
-        $row = [
-            'episode_id' => $episode->id,
-            'ip'         => $ip,
-            'country'    => $country,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
-        if (Schema::hasColumn('downloads', 'user_agent')) {
-            $row['user_agent'] = (string) $request->userAgent();
+        if (! $episode->audio_url) {
+            return back()->withErrors(['audio_url' => 'No audio URL available for this episode.']);
         }
-        Download::insert([$row]);
+
+        $ip      = $request->ip();
+        $country = $request->header('CF-IPCountry') ?: $request->header('X-App-Country') ?: null;
+
+        // de-dupe by IP in 12h window
+        $exists = $episode->downloads()
+            ->where('ip', $ip)
+            ->where('created_at', '>=', now()->subHours(12))
+            ->exists();
+
+        if (! $exists) {
+            $row = [
+                'episode_id' => $episode->id,
+                'ip'         => $ip,
+                'country'    => $country,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            if (Schema::hasColumn('downloads', 'user_agent')) {
+                $row['user_agent'] = (string) $request->userAgent();
+            }
+            Download::insert([$row]);
+        }
+
+        return redirect()->away($episode->audio_url);
     }
 
-    return redirect()->away($episode->audio_url);
-}
+    /* ---------------------- Manual plays adjuster ---------------------- */
 
+    private const MANUAL_UA = 'manual-adjust';
+
+    public function setPlays(Request $request, Episode $episode)
+    {
+        $this->authorizeOwnership($episode);
+
+        $data = $request->validate([
+            'plays' => ['required','integer','min:0'],
+        ]);
+
+        $target       = (int) $data['plays'];
+        $currentTotal = (int) $episode->downloads()->count();
+
+        // "Manual" rows marker: ip=0.0.0.0 (+ user_agent if present)
+        $manualQuery = $episode->downloads()->where('ip', '0.0.0.0');
+        if (Schema::hasColumn('downloads', 'user_agent')) {
+            $manualQuery->where('user_agent', self::MANUAL_UA);
+        }
+
+        $currentManual = (int) (clone $manualQuery)->count();
+        $delta = $target - $currentTotal;
+
+        DB::transaction(function () use ($episode, $delta, $manualQuery) {
+            if ($delta > 0) {
+                // add $delta rows
+                $ts    = now();
+                $toAdd = $delta;
+                $hasUA = Schema::hasColumn('downloads', 'user_agent');
+
+                while ($toAdd > 0) {
+                    $chunk = min(500, $toAdd);
+                    $rows  = [];
+                    for ($i = 0; $i < $chunk; $i++) {
+                        $row = [
+                            'episode_id' => $episode->id,
+                            'ip'         => '0.0.0.0',
+                            'country'    => null,
+                            'created_at' => $ts,
+                            'updated_at' => $ts,
+                        ];
+                        if ($hasUA) $row['user_agent'] = self::MANUAL_UA;
+                        $rows[] = $row;
+                    }
+                    Download::insert($rows);
+                    $toAdd -= $chunk;
+                }
+            } elseif ($delta < 0) {
+                // remove only manual rows
+                $toRemove = min(abs($delta), (int) (clone $manualQuery)->count());
+                if ($toRemove > 0) {
+                    $ids = (clone $manualQuery)->orderByDesc('id')->limit($toRemove)->pluck('id');
+                    Download::whereIn('id', $ids)->delete();
+                }
+            }
+        });
+
+        $final = (int) $episode->downloads()->count();
+        return back()->with('success', 'Plays updated to '.number_format($final).'.');
+    }
+
+    /* ---------------------- MySQL/SQLite-safe analytics ---------------------- */
+
+    /**
+     * Returns top N episodes with early download counts (first week & first month).
+     * Uses MySQL DATE_ADD for MySQL and SQLite datetime() for SQLite.
+     */
+    protected function topEpisodesEarlyDownloads(int $userId, int $limit = 8)
+    {
+        $driver = DB::connection()->getDriverName();
+
+        $add7  = $driver === 'mysql'
+            ? "DATE_ADD(COALESCE(episodes.published_at, episodes.created_at), INTERVAL 7 DAY)"
+            : "datetime(COALESCE(episodes.published_at, episodes.created_at), '+7 day')";
+
+        $add30 = $driver === 'mysql'
+            ? "DATE_ADD(COALESCE(episodes.published_at, episodes.created_at), INTERVAL 30 DAY)"
+            : "datetime(COALESCE(episodes.published_at, episodes.created_at), '+30 day')";
+
+        // Subquery: first week
+        $weekSub = DB::table('downloads')
+            ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
+            ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
+            ->whereColumn('downloads.created_at', '>=', DB::raw('COALESCE(episodes.published_at, episodes.created_at)'))
+            ->whereColumn('downloads.created_at', '<',  DB::raw($add7))
+            ->groupBy('downloads.episode_id');
+
+        // Subquery: first month
+        $monthSub = DB::table('downloads')
+            ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
+            ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
+            ->whereColumn('downloads.created_at', '>=', DB::raw('COALESCE(episodes.published_at, episodes.created_at)'))
+            ->whereColumn('downloads.created_at', '<',  DB::raw($add30))
+            ->groupBy('downloads.episode_id');
+
+        // Final
+        return DB::table('episodes')
+            ->select(
+                'episodes.id',
+                'episodes.title',
+                DB::raw('COALESCE(w.c, 0) AS first_week'),
+                DB::raw('COALESCE(m.c, 0) AS first_month')
+            )
+            ->leftJoinSub($weekSub, 'w', 'episodes.id', '=', 'w.episode_id')
+            ->leftJoinSub($monthSub, 'm', 'episodes.id', '=', 'm.episode_id')
+            ->where('episodes.user_id', $userId)
+            ->orderByRaw('COALESCE(m.c, 0) DESC, COALESCE(w.c, 0) DESC')
+            ->limit($limit)
+            ->get();
+    }
 
     /* ---------------------- Helpers ---------------------- */
 
@@ -240,168 +349,5 @@ class EpisodeController extends Controller
     private function authorizeOwnership(Episode $episode): void
     {
         abort_unless($episode->user_id === auth()->id(), 403);
-    }
-    // inside EpisodeController
-private const MANUAL_UA = 'manual-adjust';
-
-public function setPlays(Request $request, Episode $episode)
-{
-    $this->authorizeOwnership($episode);
-
-    $data = $request->validate([
-        'plays' => ['required','integer','min:0'],
-    ]);
-
-    $target       = (int) $data['plays'];
-    $currentTotal = (int) $episode->downloads()->count();
-
-    // "Manual" rows marker: ip=0.0.0.0 (+ user_agent if present)
-    $manualQuery = $episode->downloads()->where('ip', '0.0.0.0');
-    if (Schema::hasColumn('downloads', 'user_agent')) {
-        $manualQuery->where('user_agent', self::MANUAL_UA);
-    }
-
-    $currentManual = (int) (clone $manualQuery)->count();
-    $delta = $target - $currentTotal;
-
-    DB::transaction(function () use ($episode, $delta, $manualQuery) {
-        if ($delta > 0) {
-            // add $delta rows
-            $ts    = now();
-            $toAdd = $delta;
-            $hasUA = Schema::hasColumn('downloads', 'user_agent');
-
-            while ($toAdd > 0) {
-                $chunk = min(500, $toAdd);
-                $rows  = [];
-                for ($i = 0; $i < $chunk; $i++) {
-                    $row = [
-                        'episode_id' => $episode->id,
-                        'ip'         => '0.0.0.0',
-                        'country'    => null,
-                        'created_at' => $ts,
-                        'updated_at' => $ts,
-                    ];
-                    if ($hasUA) $row['user_agent'] = self::MANUAL_UA;
-                    $rows[] = $row;
-                }
-                Download::insert($rows);
-                $toAdd -= $chunk;
-            }
-        } elseif ($delta < 0) {
-            // remove only manual rows
-            $toRemove = min(abs($delta), (int) (clone $manualQuery)->count());
-            if ($toRemove > 0) {
-                $ids = (clone $manualQuery)->orderByDesc('id')->limit($toRemove)->pluck('id');
-                Download::whereIn('id', $ids)->delete();
-            }
-        }
-    });
-
-    $final = (int) $episode->downloads()->count();
-    return back()->with('success', 'Plays updated to '.number_format($final).'.');
-}
-
- 
-
-    /* ---------------------- AI Enhance (unchanged) ---------------------- */
-    public function aiEnhance(Request $request, Episode $episode)
-    {
-        $this->authorize('update', $episode);
-
-        $source = $episode->audio_url;
-        if (! $source) {
-            return back()->withErrors(['audio_url' => 'This episode has no audio URL to analyze.']);
-        }
-
-        $localPath = null;
-
-        try {
-            if (Str::startsWith($source, url('/storage'))) {
-                $relative  = Str::after($source, url('/storage/'));
-                $localPath = storage_path('app/public/'.$relative);
-                if (! is_file($localPath)) {
-                    return back()->withErrors(['audio_url' => 'Could not read local audio file.']);
-                }
-            } elseif (Str::startsWith($source, ['http://', 'https://'])) {
-                $tmp = tmpfile();
-                $tmpMeta = stream_get_meta_data($tmp);
-                $localPath = $tmpMeta['uri'];
-
-                $response = Http::timeout(120)->get($source);
-                if (! $response->ok()) {
-                    return back()->withErrors(['audio_url' => 'Could not download the audio from the URL.']);
-                }
-                file_put_contents($localPath, $response->body());
-            } else {
-                $maybe = storage_path('app/'.$source);
-                if (is_file($maybe)) {
-                    $localPath = $maybe;
-                } else {
-                    return back()->withErrors(['audio_url' => 'Unsupported audio location.']);
-                }
-            }
-        } catch (\Throwable $e) {
-            return back()->withErrors(['audio_url' => 'Audio retrieval failed: '.$e->getMessage()]);
-        }
-
-        $apiKey = config('services.openai.key');
-        if (! $apiKey) {
-            return back()->withErrors(['ai' => 'Missing OPENAI_API_KEY. Add it to .env and config/services.php.']);
-        }
-
-        try {
-            $transcription = Http::asMultipart()
-                ->withToken($apiKey)
-                ->attach('file', fopen($localPath, 'r'), basename($localPath))
-                ->post('https://api.openai.com/v1/audio/transcriptions', [
-                    'model' => 'whisper-1',
-                    'response_format' => 'text',
-                ])->throw()->body();
-
-            $prompt = <<<PROMPT
-            You are an editorial assistant for podcast show notes.
-            Given the raw transcript below, produce a compact JSON object with:
-            - "title": a compelling 60-90 character title (no quotes inside).
-            - "description": 2-4 sentence paragraph summary for the episode (plain text).
-            - "chapters": an array of objects with "start" (HH:MM:SS) and "title". Create 5-12 chapters. If you cannot infer times, set "start" to "00:00:00", "00:05:00", etc. spaced evenly.
-
-            Return ONLY valid JSON. Do not wrap it in code fences.
-
-            TRANSCRIPT:
-            {$transcription}
-            PROMPT;
-
-            $chat = Http::withToken($apiKey)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o-mini',
-                    'temperature' => 0.3,
-                    'response_format' => ['type' => 'json_object'],
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'You write excellent podcast metadata.'],
-                        ['role' => 'user', 'content' => $prompt],
-                    ],
-                ])->throw()->json();
-
-            $json = json_decode($chat['choices'][0]['message']['content'] ?? '{}', true);
-            if (!is_array($json)) $json = [];
-
-            $newTitle = $json['title'] ?? null;
-            $newDesc  = $json['description'] ?? null;
-            $newChaps = $json['chapters'] ?? null;
-
-            $episode->title       = $newTitle ?: ($episode->title ?: 'Untitled');
-            if ($newDesc)         $episode->description = $newDesc;
-            if (is_array($newChaps)) $episode->chapters = $newChaps; // json column
-            $episode->transcript  = $transcription;                  // long text
-            $episode->save();
-
-            return back()->with('success', 'AI enhancement complete — title, description, chapters, and transcript updated.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            $msg = $e->response?->json('error.message') ?? $e->getMessage();
-            return back()->withErrors(['ai' => 'OpenAI error: '.$msg]);
-        } catch (\Throwable $e) {
-            return back()->withErrors(['ai' => 'AI enhancement failed: '.$e->getMessage()]);
-        }
     }
 }
