@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class SiteSetting extends Model
 {
-    protected $table = 'settings';           // <-- IMPORTANT: use ONE table
+    protected $table = 'site_settings';           // <-- IMPORTANT: use ONE table
     public $timestamps = false;
 
     protected $fillable = ['user_id', 'key', 'value'];

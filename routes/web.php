@@ -167,66 +167,31 @@ Route::get('/podcast/{slug}', [PublicSiteController::class, 'show'])->name('site
 | Website settings (admin)
 |--------------------------------------------------------------------------
 */
-Route::prefix('distribution/website')
-    ->name('website.')
-    // ->middleware('auth') // enable if needed
-    ->group(function () {
-        Route::get('/', [WebsiteController::class, 'edit'])->name('edit');                // website.edit
-        Route::post('/', [WebsiteController::class, 'update'])->name('update');           // website.update
-        Route::post('/clear-banner', [WebsiteController::class, 'clearBanner'])->name('banner.clear'); // website.banner.clear
-    });
+// Admin/settings
+Route::get('/distribution/website', [WebsiteController::class, 'website'])->name('website');
+Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.edit');
+Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.update');
+Route::post('/distribution/website/themes', [WebsiteController::class, 'updateThemes'])->name('website.themes.update');
+// Public user-scoped site links (unique per user)
+Route::get('/site/u/{user}/{template}/{slug}', [WebsiteController::class, 'userSite'])->where(['user'=>'[0-9]+','template'=>'zen|frontrow|focuspod'])->name('site.user');
+Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
+Route::post('/distribution/website/quick-select', [WebsiteController::class,'quickSelect'])->name('website.themes.quick');
+Route::middleware(['web','auth'])->group(function () {
+Route::post('/distribution/website/update', [WebsiteController::class, 'update'])->name('website.themes.update');
+Route::post('/distribution/website/quick-select', [WebsiteController::class, 'quickSelect'])->name('website.themes.quick');
+  
+});
 
 /*
 |--------------------------------------------------------------------------
 | Public site & preview
 |--------------------------------------------------------------------------
 */
-Route::get('/site', [WebsiteController::class, 'show'])->name('site.show');
 
-Route::get('/site/preview/{template}', [WebsiteController::class, 'preview'])
-    ->whereIn('template', ['zen','frontrow','focuspod'])
-    ->name('site.preview');
+Route::get('/site/preview/{template}', [WebsiteController::class, 'preview'])->name('site.preview');
+Route::get('/site/show', [WebsiteController::class, 'show'])->name('site.show');
 
 
-Route::prefix('website')->name('website.')->group(function () {
-    Route::get('/themes',  [WebsiteController::class, 'edit'])->name('themes');          // website.themes
-    Route::post('/themes', [WebsiteController::class, 'update'])->name('themes.update'); // website.themes.update
-});
-// Admin/settings
-Route::get('/distribution/website', [WebsiteController::class, 'edit'])->name('website.edit');
-Route::post('/distribution/website', [WebsiteController::class, 'update'])->name('website.update');
-// Optional alias to satisfy Blade using website.themes.update
-Route::post('/distribution/website/themes', [WebsiteController::class, 'updateThemes'])->name('website.themes.update');
-Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])->name('website.banner.clear');
-Route::post('/distribution/website/quick-select', [WebsiteController::class, 'quickSelect'])
-    ->name('website.themes.quick');  // new JSON endpoint
-
-// Public user-scoped site links (unique per user)
-Route::get('/site/u/{user}/{template}/{slug}', [WebsiteController::class, 'userSite'])
-    ->where(['user'=>'[0-9]+','template'=>'zen|frontrow|focuspod'])
-    ->name('site.user');
-
-Route::get('/distribution/website', [WebsiteController::class, 'edit'])
-    ->name('website.edit');
-
-////Route::post('/distribution/website', [WebsiteController::class, 'update'])
-   // ->name('website.update');
-
-Route::post('/distribution/website/clear-banner', [WebsiteController::class, 'clearBanner'])
-    ->name('website.banner.clear');
-
-// Public
-Route::get('/site', [WebsiteController::class, 'show'])->name('site.show');
-Route::get('/site/preview/{template}', [WebsiteController::class, 'preview'])
-    ->whereIn('template', ['zen','frontrow','focuspod'])
-    ->name('site.preview');
-
-/*
-|--------------------------------------------------------------------------
-| Theme alias routes (optional)
-| These map to the same edit/update actions but under /website/themes
-|--------------------------------------------------------------------------
-*/
 
 
 /*
@@ -478,7 +443,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/social', [DistributionController::class, 'social'])->name('social');
         Route::get('/apps',    [DistributionController::class, 'apps'])->name('apps');
         Route::get('/social',  [DistributionController::class, 'social'])->name('social');
-        Route::get('/website', [DistributionController::class, 'website'])->name('website');
+        
         Route::get('/player',  [DistributionController::class, 'player'])->name('player');
         Route::post('/{slug}',   [DistributionController::class, 'save'])->name('save');
         Route::delete('/{slug}', [DistributionController::class, 'disconnect'])->name('disconnect');

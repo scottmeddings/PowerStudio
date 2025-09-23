@@ -261,11 +261,7 @@ class DistributionController extends Controller
         }
     }
 
-    /** GET: /distribution/website */
-    public function website()
-    {
-        return view('distribution.website');
-    }
+   
 
  
 }

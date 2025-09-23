@@ -354,6 +354,8 @@
           <li>
             <form method="POST" action="{{ route('logout') }}">
               @csrf
+              <meta name="csrf-token" content="{{ csrf_token() }}">
+
               <button class="dropdown-item text-danger" type="submit">
                 <i class="bi bi-box-arrow-right me-2"></i>Logout
               </button>

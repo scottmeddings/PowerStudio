@@ -31,12 +31,19 @@
 
   $current = $settings['template'] ?? 'zen';
 
-  // ---------- PUBLIC LINK (user-scoped & unique) ----------
-  $uid = auth()->id() ?? 'guest';
-  $computedSlug = $settings['site_slug']
-    ?? Str::of(auth()->user()->name ?? ('user-'.$uid))->slug('-')->append('-')->append(substr(md5($uid), 0, 6));
-  $publicBase   = url('/site/u/'.$uid);
-  $publicUrl    = $publicBase.'/'.$current.'/'.$computedSlug;
+// ---------- PUBLIC LINK (user-scoped & unique) ----------
+$uid = auth()->id() ?? 'guest';
+$computedSlug = $settings['site_slug']
+  ?? Str::of(auth()->user()->name ?? ('user-'.$uid))->slug('-')->append('-')->append(substr(md5($uid), 0, 6));
+$publicBase   = url('/site/u/'.$uid);
+
+// build a computed URL as fallback
+$computedUrl  = $publicBase.'/'.(($settings['template'] ?? 'zen')).'/'.$computedSlug;
+
+// ✅ prefer DB value when present, otherwise fallback
+$publicUrl = $settings['public_url'] ?? null;
+
+
 
   // ---------- RESOLVE BANNER URL ----------
   $resolvedBannerUrl = null;
@@ -52,7 +59,7 @@
     }
   }
 
-  // ---------- ENDPOINTS (safe guards) ----------
+  // ---------- ENDPOINTS ----------
   $updateUrl = route('website.themes.update'); // existing form route
   $quickUrl  = RouteFacade::has('website.themes.quick') ? route('website.themes.quick') : null; // optional JSON route
 @endphp
@@ -88,7 +95,7 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <label for="publicLink" class="form-label mb-2">
-      Public website link <small class="text-muted"></small>
+      Public website link
     </label>
     <div class="input-group">
       <input id="publicLink" type="text" class="form-control" value="{{ $publicUrl }}" readonly>
@@ -97,8 +104,6 @@
         <i class="bi bi-clipboard"></i> Copy
       </button>
     </div>
-    <small class="text-muted">
-    </small>
   </div>
 </div>
 
@@ -107,13 +112,14 @@
     @php
       $previewImg = $resolvedBannerUrl ?: $tpl['img'];
       $tplUrl     = $publicBase.'/'.$tpl['slug'].'/'.$computedSlug;
+      $isCurrent  = $current === $tpl['slug'];
     @endphp
     <div class="col-12 col-md-6 col-xl-4 d-flex">
-      <div class="theme-card shadow-sm flex-fill {{ $current === $tpl['slug'] ? 'is-current' : '' }}">
+      <div class="theme-card shadow-sm flex-fill {{ $isCurrent ? 'is-current' : '' }}" data-template="{{ $tpl['slug'] }}">
         <div class="theme-cover" style="background-image:url('{{ $previewImg }}')">
           <div class="theme-cover__fade"></div>
           <span class="theme-cover__label">{{ $tpl['name'] }} preview</span>
-          @if($current === $tpl['slug'])
+          @if($isCurrent)
             <span class="theme-ribbon">Current</span>
           @endif
         </div>
@@ -135,18 +141,17 @@
               Customize
             </button>
 
-            {{-- Preview opens the user-scoped URL --}}
             <a href="{{ $tplUrl }}" target="_blank" rel="noopener"
                class="btn btn-outline-secondary btn-sm px-3">
               Preview
             </a>
 
-            {{-- Use Template: persist (quick JSON if present; fallback to normal update) --}}
             <button type="button"
                     class="btn btn-secondary btn-sm px-3 ms-auto js-use-template"
                     data-template="{{ $tpl['slug'] }}"
-                    data-url="{{ $tplUrl }}">
-              Use Template
+                    data-url="{{ $tplUrl }}"
+                    {{ $isCurrent ? 'disabled aria-disabled=true' : '' }}>
+              {{ $isCurrent ? 'Current' : 'Use Template' }}
             </button>
           </div>
         </div>
@@ -161,6 +166,8 @@
     <form class="modal-content" action="{{ $updateUrl }}" method="post" enctype="multipart/form-data" novalidate>
       @csrf
       <input type="hidden" id="tpl-input" name="template" value="{{ $settings['template'] }}">
+      {{-- ensure slug persists on full form save as well --}}
+      <input type="hidden" name="site_slug" value="{{ $computedSlug }}">
       <input type="hidden" id="clear-banner-input" name="clear_banner" value="0">
 
       <div class="modal-header">
@@ -267,28 +274,12 @@
   // ===== Helpers =====
   const q  = (s, c) => (c||document).querySelector(s);
   const qa = (s, c) => Array.from((c||document).querySelectorAll(s));
-  function ensureRibbon(card, on){
-    const cover = card.querySelector('.theme-cover') || card;
-    let r = card.querySelector('.theme-ribbon');
-    if (on) {
-      if (!r) { r = document.createElement('span'); r.className = 'theme-ribbon'; r.textContent = 'Current'; cover.appendChild(r); }
-    } else if (r) { r.remove(); }
-  }
-  function markCurrent(tpl, url, card){
-    qa('.theme-card').forEach(c => { c.classList.remove('is-current'); ensureRibbon(c, false); });
-    if (card) { card.classList.add('is-current'); ensureRibbon(card, true); }
-    if (url) {
-      const input = q('#publicLink'); const open = q('#openPublicLink');
-      if (input) input.value = url;
-      if (open)  open.setAttribute('href', url);
-    }
-    const tplHidden = q('#tpl-input'); if (tplHidden && tpl) tplHidden.value = tpl;
-  }
+
   function getCsrf() {
-    const i = document.querySelector('input[name="_token"]');
-    if (i?.value) return i.value;
     const m = document.querySelector('meta[name="csrf-token"]');
-    return m ? m.getAttribute('content') : '';
+    if (m?.content) return m.content;
+    const i = document.querySelector('input[name="_token"]');
+    return i?.value || '';
   }
 
   // Endpoint URLs (Blade-injected)
@@ -296,12 +287,15 @@
   const ENDPOINT_UPDATE = @json($updateUrl);  // exists
 
   // ===== Use Template: persist to DB, then mark blue Current =====
-  qa('.js-use-template').forEach(btn => {
+  document.querySelectorAll('.js-use-template').forEach(btn => {
     btn.addEventListener('click', async () => {
       const tpl  = btn.getAttribute('data-template');
-      const url  = btn.getAttribute('data-url'); // fallback
+      const url  = btn.getAttribute('data-url'); // fallback if backend doesn’t return JSON
       const card = btn.closest('.theme-card');
       const csrf = getCsrf();
+
+      // Ignore if already current (button is disabled in markup too)
+      if (btn.disabled) return;
 
       const original = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = 'Saving…';
@@ -310,11 +304,13 @@
         const endpoint = ENDPOINT_QUICK || ENDPOINT_UPDATE;
         const res = await fetch(endpoint, {
           method: 'POST',
+          credentials: 'same-origin',
+          redirect: 'follow',
           headers: {
             'X-CSRF-TOKEN': csrf,
-            'Accept': ENDPOINT_QUICK ? 'application/json' : 'text/html',
             'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'Accept': ENDPOINT_QUICK ? 'application/json' : 'text/html'
           },
           body: new URLSearchParams({
             template: tpl,
@@ -322,23 +318,51 @@
           }),
         });
 
-        if (res.status >= 400) throw new Error('Save failed');
+        if (res.status === 419) throw new Error('Session expired (419). Refresh and try again.');
+        if (res.status === 401 || res.status === 403) throw new Error('Not authorized—please sign in again.');
+        if (res.status >= 400) throw new Error('Save failed (' + res.status + ').');
 
-        // Prefer canonical URL from JSON quick endpoint; else fallback to precomputed url
+        // Prefer canonical URL from JSON quick endpoint
         let liveUrl = url;
         if (ENDPOINT_QUICK) {
           try {
             const json = await res.json();
             if (json?.public_url) liveUrl = json.public_url;
-          } catch (_) { /* non-fatal; fallback to url */ }
+          } catch { /* fall back */ }
         }
 
-        markCurrent(tpl, liveUrl, card);
-        btn.innerHTML = 'Saved';
-        setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 900);
+        // Update UI: top URL and blue "Current" ribbon
+        document.querySelectorAll('.theme-card').forEach(c => {
+          c.classList.remove('is-current');
+          c.querySelector('.theme-ribbon')?.remove();
+          const useBtn = c.querySelector('.js-use-template');
+          if (useBtn) { useBtn.disabled = false; useBtn.textContent = 'Use Template'; }
+        });
+
+        if (card) {
+          card.classList.add('is-current');
+          const cover = card.querySelector('.theme-cover') || card;
+          const r = document.createElement('span');
+          r.className = 'theme-ribbon'; r.textContent = 'Current';
+          cover.appendChild(r);
+          // disable this card's Use button since it's current now
+          btn.disabled = true; btn.textContent = 'Current';
+        }
+
+        if (liveUrl) {
+          const input = document.getElementById('publicLink');
+          const open  = document.getElementById('openPublicLink');
+          if (input) input.value = liveUrl;
+          if (open)  open.setAttribute('href', liveUrl);
+        }
+
+        // keep hidden template in sync for modal Save
+        const hiddenTpl = document.getElementById('tpl-input');
+        if (hiddenTpl) hiddenTpl.value = tpl;
+
       } catch (e) {
         console.error(e);
-        alert('Sorry—could not save this template. Please try again.');
+        alert(e.message || 'Sorry—could not save this template. Please try again.');
         btn.innerHTML = original; btn.disabled = false;
       }
     });
