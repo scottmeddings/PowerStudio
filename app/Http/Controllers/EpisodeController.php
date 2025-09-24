@@ -286,48 +286,48 @@ class EpisodeController extends Controller
      * Uses MySQL DATE_ADD for MySQL and SQLite datetime() for SQLite.
      */
     protected function topEpisodesEarlyDownloads(int $userId, int $limit = 8)
-    {
-        $driver = DB::connection()->getDriverName();
+{
+    $driver = DB::connection()->getDriverName(); // 'mysql' for MySQL/MariaDB, 'sqlite' for SQLite
 
-        $add7  = $driver === 'mysql'
-            ? "DATE_ADD(COALESCE(episodes.published_at, episodes.created_at), INTERVAL 7 DAY)"
-            : "datetime(COALESCE(episodes.published_at, episodes.created_at), '+7 day')";
+    $base  = "COALESCE(episodes.published_at, episodes.created_at)";
+    $add7  = $driver === 'sqlite'
+        ? "DATETIME($base, '+7 day')"
+        : "DATE_ADD($base, INTERVAL 7 DAY)";
+    $add30 = $driver === 'sqlite'
+        ? "DATETIME($base, '+30 day')"
+        : "DATE_ADD($base, INTERVAL 30 DAY)";
 
-        $add30 = $driver === 'mysql'
-            ? "DATE_ADD(COALESCE(episodes.published_at, episodes.created_at), INTERVAL 30 DAY)"
-            : "datetime(COALESCE(episodes.published_at, episodes.created_at), '+30 day')";
+    // First week subquery
+    $weekSub = DB::table('downloads')
+        ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
+        ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
+        ->whereRaw("downloads.created_at >= $base")
+        ->whereRaw("downloads.created_at < $add7")
+        ->groupBy('downloads.episode_id');
 
-        // Subquery: first week
-        $weekSub = DB::table('downloads')
-            ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
-            ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
-            ->whereColumn('downloads.created_at', '>=', DB::raw('COALESCE(episodes.published_at, episodes.created_at)'))
-            ->whereColumn('downloads.created_at', '<',  DB::raw($add7))
-            ->groupBy('downloads.episode_id');
+    // First month subquery
+    $monthSub = DB::table('downloads')
+        ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
+        ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
+        ->whereRaw("downloads.created_at >= $base")
+        ->whereRaw("downloads.created_at < $add30")
+        ->groupBy('downloads.episode_id');
 
-        // Subquery: first month
-        $monthSub = DB::table('downloads')
-            ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
-            ->select('downloads.episode_id', DB::raw('COUNT(*) AS c'))
-            ->whereColumn('downloads.created_at', '>=', DB::raw('COALESCE(episodes.published_at, episodes.created_at)'))
-            ->whereColumn('downloads.created_at', '<',  DB::raw($add30))
-            ->groupBy('downloads.episode_id');
-
-        // Final
-        return DB::table('episodes')
-            ->select(
-                'episodes.id',
-                'episodes.title',
-                DB::raw('COALESCE(w.c, 0) AS first_week'),
-                DB::raw('COALESCE(m.c, 0) AS first_month')
-            )
-            ->leftJoinSub($weekSub, 'w', 'episodes.id', '=', 'w.episode_id')
-            ->leftJoinSub($monthSub, 'm', 'episodes.id', '=', 'm.episode_id')
-            ->where('episodes.user_id', $userId)
-            ->orderByRaw('COALESCE(m.c, 0) DESC, COALESCE(w.c, 0) DESC')
-            ->limit($limit)
-            ->get();
-    }
+    // Final ranking
+    return DB::table('episodes')
+        ->select(
+            'episodes.id',
+            'episodes.title',
+            DB::raw('COALESCE(w.c, 0) AS first_week'),
+            DB::raw('COALESCE(m.c, 0) AS first_month')
+        )
+        ->leftJoinSub($weekSub, 'w', 'episodes.id', '=', 'w.episode_id')
+        ->leftJoinSub($monthSub, 'm', 'episodes.id', '=', 'm.episode_id')
+        ->where('episodes.user_id', $userId)
+        ->orderByRaw('COALESCE(m.c, 0) DESC, COALESCE(w.c, 0) DESC')
+        ->limit($limit)
+        ->get();
+}
 
     /* ---------------------- Helpers ---------------------- */
 

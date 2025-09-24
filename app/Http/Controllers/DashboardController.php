@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;        // ← add
+use Illuminate\Support\Facades\DB;
 use App\Models\Download;
 use App\Models\Episode;
 use App\Models\Comment;
@@ -38,11 +38,16 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
         }
-          // Mini series for tiles
-        $series7      = $this->dailySeries(7);     // last 7 days (daily)
-        $series30     = $this->dailySeries(30);    // last 30 days (daily)
-        $series8days  = $this->dailySeries(8);     // 8 points for the "Yesterday" sparkline
-        $seriesMonths = $this->monthlySeries(12);  // last 12 months (monthly)
+
+        // ---- Driver-specific SQL helpers -----------------------------------
+        $driver   = DB::connection()->getDriverName(); // 'mysql' for MySQL/MariaDB, 'sqlite' for SQLite, etc.
+        $dateExpr = $driver === 'sqlite' ? "date(created_at)" : "DATE(created_at)";
+
+        // ---- Mini series for tiles -----------------------------------------
+        $series7      = $this->dailySeries(7,  $dateExpr);
+        $series30     = $this->dailySeries(30, $dateExpr);
+        $series8days  = $this->dailySeries(8,  $dateExpr); // for "Yesterday" sparkline
+        $seriesMonths = $this->monthlySeries(12);
 
         $tiles = [
             'yesterday' => [
@@ -66,39 +71,40 @@ class DashboardController extends Controller
             'all' => [
                 'label'  => 'All Time Downloads',
                 'value'  => $metrics['allTime'] ?? 0,
-                'series' => $this->sample($seriesMonths, 8), // monthly trend
+                'series' => $this->sample($seriesMonths, 8),
                 'color'  => '#f59e0b',
             ],
         ];
 
-        // ---- Episode Performance  ------------------------------------------
-        // Count downloads occurring in the FIRST 7/30 days after publish
-        // (falls back to created_at if published_at is NULL).
-        //
-        // We build two subqueries (week/month) and LEFT JOIN them to episodes.
-        // This is SQLite compatible via datetime(..., '+7 day') syntax.
+        // ---- Episode Performance (first 7/30 days) -------------------------
+        $base  = "COALESCE(episodes.published_at, episodes.created_at)";
+        $add7  = $driver === 'sqlite'
+            ? "DATETIME($base, '+7 day')"
+            : "DATE_ADD($base, INTERVAL 7 DAY)";
+        $add30 = $driver === 'sqlite'
+            ? "DATETIME($base, '+30 day')"
+            : "DATE_ADD($base, INTERVAL 30 DAY)";
+
         $firstWeekSub = DB::table('downloads')
             ->selectRaw('downloads.episode_id, COUNT(*) as c')
             ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
-            ->whereRaw("downloads.created_at >= COALESCE(episodes.published_at, episodes.created_at)")
-            ->whereRaw("downloads.created_at <  datetime(COALESCE(episodes.published_at, episodes.created_at), '+7 day')")
+            ->whereRaw("downloads.created_at >= $base")
+            ->whereRaw("downloads.created_at <  $add7")
             ->groupBy('downloads.episode_id');
 
         $firstMonthSub = DB::table('downloads')
             ->selectRaw('downloads.episode_id, COUNT(*) as c')
             ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
-            ->whereRaw("downloads.created_at >= COALESCE(episodes.published_at, episodes.created_at)")
-            ->whereRaw("downloads.created_at <  datetime(COALESCE(episodes.published_at, episodes.created_at), '+30 day')")
+            ->whereRaw("downloads.created_at >= $base")
+            ->whereRaw("downloads.created_at <  $add30")
             ->groupBy('downloads.episode_id');
 
-
-            // ---- Downloads Trending (last 14 days) -------------------------------
+        // ---- Downloads Trending (last 14 days) -----------------------------
         $days  = 14;
         $end   = now()->endOfDay();
         $start = $end->copy()->subDays($days - 1)->startOfDay();
 
-        // Daily counts in the current window
-        $raw = Download::selectRaw("date(created_at) as d, count(*) as c")
+        $raw = Download::selectRaw("$dateExpr as d, count(*) as c")
             ->whereBetween('created_at', [$start, $end])
             ->groupBy('d')
             ->orderBy('d')
@@ -115,9 +121,9 @@ class DashboardController extends Controller
             $series[] = ['date' => $k, 'count' => $v];
             $currentTotal += $v;
             $cursor->addDay();
-        }    
-        
-        // Previous period totals (the 14 days immediately before the window)
+        }
+
+        // Previous 14 days window
         $prevStart  = $start->copy()->subDays($days);
         $prevEnd    = $start->copy()->subDay()->endOfDay();
         $prevTotal  = Download::whereBetween('created_at', [$prevStart, $prevEnd])->count();
@@ -125,16 +131,15 @@ class DashboardController extends Controller
         $maxValue   = max(1, max(array_column($series, 'count')));
 
         $trending = [
-            'series'        => $series,        // [{date, count}, ...]
-            'total'         => $currentTotal,  // sum of series
-            'prev_total'    => $prevTotal,     // previous 14-day total
-            'delta'         => $delta,         // difference vs previous period
-            'max'           => $maxValue,      // for chart scaling
+            'series'        => $series,
+            'total'         => $currentTotal,
+            'prev_total'    => $prevTotal,
+            'delta'         => $delta,
+            'max'           => $maxValue,
             'days'          => $days,
             'start'         => $start,
             'end'           => $end,
         ];
-
 
         $episodesPerformance = Episode::query()
             ->selectRaw("
@@ -145,8 +150,7 @@ class DashboardController extends Controller
             ")
             ->leftJoinSub($firstWeekSub,  'w', fn ($j) => $j->on('episodes.id', '=', 'w.episode_id'))
             ->leftJoinSub($firstMonthSub, 'm', fn ($j) => $j->on('episodes.id', '=', 'm.episode_id'))
-            ->orderByDesc(DB::raw('COALESCE(m.c, 0)'))
-            ->orderByDesc(DB::raw('COALESCE(w.c, 0)'))
+            ->orderByRaw('COALESCE(m.c, 0) DESC, COALESCE(w.c, 0) DESC')
             ->limit(8)
             ->get();
 
@@ -156,28 +160,18 @@ class DashboardController extends Controller
             'achLocked',
             'allAchievements',
             'recentComments',
-            'metrics',
-            'achUnlocked',
-            'achLocked',
-            'allAchievements',
-            'recentComments',
             'trending',
-            'metrics', 
-            'achUnlocked', 
-            'achLocked', 
-            'allAchievements',
-            'recentComments', 
-            'trending', 
             'tiles',
-            'episodesPerformance'   // ← pass to blade
+            'episodesPerformance'
         ));
     }
-        private function dailySeries(int $days): array
+
+    private function dailySeries(int $days, string $dateExpr): array
     {
         $end   = now()->endOfDay();
         $start = $end->copy()->subDays($days - 1)->startOfDay();
 
-        $raw = Download::selectRaw('date(created_at) as d, count(*) as c')
+        $raw = Download::selectRaw("$dateExpr as d, count(*) as c")
             ->whereBetween('created_at', [$start, $end])
             ->groupBy('d')
             ->pluck('c', 'd')
@@ -192,6 +186,7 @@ class DashboardController extends Controller
         }
         return $series;
     }
+
     private function monthlySeries(int $months): array
     {
         $driver = DB::connection()->getDriverName();
@@ -201,8 +196,8 @@ class DashboardController extends Controller
             default  => "to_char(created_at, 'YYYY-MM')", // pgsql
         };
 
-        $end   = now()->startOfMonth();                 // current month
-        $start = $end->copy()->subMonths($months - 1);  // N months back
+        $end   = now()->startOfMonth();
+        $start = $end->copy()->subMonths($months - 1);
 
         $raw = Download::selectRaw("$expr as ym, count(*) as c")
             ->whereBetween('created_at', [$start, $end->copy()->endOfMonth()])
@@ -219,7 +214,8 @@ class DashboardController extends Controller
         }
         return $series;
     }
-        private function sample(array $series, int $points = 8): array
+
+    private function sample(array $series, int $points = 8): array
     {
         $n = count($series);
         if ($n <= $points) return $series;
