@@ -1,10 +1,9 @@
-{{-- resources/views/layouts/app.blade.php --}}
 <!doctype html>
 <html lang="{{ str_replace('_','-', app()->getLocale()) }}" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Powerpod · @yield('title', 'Dashboard')</title>
+  <title>PowerStudio · @yield('title', 'Dashboard')</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
@@ -88,15 +87,11 @@
     .main{ grid-area:main; position:relative; z-index:1; }
 
     /* Sidebar UI */
-    .sidebar .brand{
-      display:flex; align-items:center; gap:.75rem;
-      padding:.5rem 1.25rem 1rem; color:#fff; text-decoration:none;
+    .sidebar .brand-logo{
+      text-align:center; margin-bottom:1.5rem;
     }
-    .brand-badge{
-      width:34px; height:34px; border-radius:10px;
-      display:inline-grid; place-items:center; color:#fff;
-      background:linear-gradient(135deg,var(--brand-1),var(--brand-2));
-      box-shadow:0 10px 20px rgba(99,102,241,.35);
+    .sidebar .brand-logo img{
+      max-width:140px; height:auto;
     }
     .sidebar .nav-link{
       color:var(--c-sidebar-link); border-radius:.5rem; padding:.6rem 1rem; margin:.2rem .75rem;
@@ -150,10 +145,9 @@
 <div class="app">
   {{-- Sidebar --}}
   <aside id="sidebar" class="sidebar">
-    <a href="{{ route('dashboard') }}" class="brand">
-      <span class="brand-badge"><i class="bi bi-soundwave"></i></span>
-      <span class="fw-semibold">Powerpod</span>
-    </a>
+    <div class="brand-logo">
+      <img src="{{ asset('images/powerstudio-logo.png') }}" alt="PowerStudio">
+    </div>
 
     <nav class="mt-2">
       @php
@@ -162,27 +156,26 @@
       @endphp
 
       <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
-         href="{{ route('dashboard') }}" @if(request()->routeIs('dashboard')) aria-current="page" @endif>
+         href="{{ route('dashboard') }}">
         <i class="bi bi-speedometer2 me-2"></i>Dashboard
       </a>
 
       <a class="nav-link {{ request()->routeIs('episodes*') ? 'active' : '' }}"
-         href="{{ route('episodes') }}" @if(request()->routeIs('episodes*')) aria-current="page" @endif>
+         href="{{ route('episodes') }}">
         <i class="bi bi-mic me-2"></i>Episodes
       </a>
 
       {{-- Distribution dropdown --}}
       @php
         $inDistribution = request()->routeIs('distribution*');
-        $distIndex  = route('distribution');
-        $appsUrl    = \Route::has('distribution.apps')    ? route('distribution.apps')    : $distIndex;
-        $socialUrl  = \Route::has('distribution.social')  ? route('distribution.social')  : $distIndex;
-        $websiteUrl = \Route::has('distribution.website') ? route('distribution.website') : $distIndex;
-        $playerUrl  = \Route::has('distribution.player')  ? route('distribution.player')  : $distIndex;
+        $appsUrl    = \Route::has('distribution.apps')    ? route('distribution.apps')    : '#';
+        $socialUrl  = \Route::has('distribution.social')  ? route('distribution.social')  : '#';
+        $websiteUrl = \Route::has('distribution.website') ? route('distribution.website') : '#';
+        $playerUrl  = \Route::has('distribution.player')  ? route('distribution.player')  : '#';
       @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
-          <a class="nav-link flex-grow-1 {{ $inDistribution ? 'active' : '' }}" href="">
+          <a class="nav-link flex-grow-1 {{ $inDistribution ? 'active' : '' }}" href="#">
             <i class="bi bi-broadcast-pin me-2"></i>Distribution
           </a>
           <button class="btn btn-sm btn-outline-secondary ms-2"
@@ -197,50 +190,27 @@
 
         <div id="distributionMenu" class="collapse {{ $inDistribution ? 'show' : '' }}">
           <ul class="list-unstyled my-2">
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}"
-                 href="{{ url('/distribution/apps') }}">
-                <i class="bi bi-app-indicator me-2"></i>Podcast Apps
-                <span class="ms-2 align-middle" style="color:#ef4444;">•</span>
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}"
-                 href="{{ url('/distribution/social') }}">
-                <i class="bi bi-share me-2"></i>Social Share
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}"
-                 href="{{ url('/distribution/website') }}">
-                <i class="bi bi-globe2 me-2"></i>Podcast Website
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}"
-                 href="{{ url('/distribution/player') }}">
-                <i class="bi bi-play-btn me-2"></i>Embeddable Player
-              </a>
-            </li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}" href="{{ $appsUrl }}"><i class="bi bi-app-indicator me-2"></i>Podcast Apps</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}" href="{{ $socialUrl }}"><i class="bi bi-share me-2"></i>Social Share</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}" href="{{ $websiteUrl }}"><i class="bi bi-globe2 me-2"></i>Podcast Website</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}" href="{{ $playerUrl }}"><i class="bi bi-play-btn me-2"></i>Embeddable Player</a></li>
           </ul>
         </div>
       </div>
 
       <a class="nav-link {{ request()->routeIs('statistics*') ? 'active' : '' }}"
-         href="{{ route('statistics') }}" @if(request()->routeIs('statistics*')) aria-current="page" @endif>
+         href="{{ route('statistics') }}">
         <i class="bi bi-graph-up-arrow me-2"></i>Statistics
       </a>
 
       <a class="nav-link {{ request()->routeIs('monetization*') ? 'active' : '' }}"
-         href="{{ route('monetization') }}" @if(request()->routeIs('monetization*')) aria-current="page" @endif>
+         href="{{ route('monetization') }}">
         <i class="bi bi-currency-dollar me-2"></i>Monetization
       </a>
 
-      {{-- Settings dropdown (also houses Administration) --}}
+      {{-- Settings dropdown --}}
       @php
-        $inSettings = request()->routeIs('settings.*') || request()->routeIs('admin.*');
-        $usersUrl   = \Route::has('admin.users.index') ? route('admin.users.index') : url('/admin/users');
-        $database   = \Route::has('test.totals') ? route('test.totals') : url('/test/totals');
+        $inSettings = request()->routeIs('settings.*');
       @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
@@ -260,54 +230,46 @@
 
         <div id="settingsMenu" class="collapse {{ $inSettings ? 'show' : 'hide' }}">
           <ul class="list-unstyled my-2">
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('settings.general') ? 'active' : '' }}"
-                 href="{{ route('settings.general') }}">
-                <i class="bi bi-sliders me-2"></i>General
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('settings.feed') ? 'active' : '' }}"
-                 href="{{ route('settings.feed') }}">
-                <i class="bi bi-rss me-2"></i>Feed
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('settings.plugins') ? 'active' : '' }}"
-                 href="{{ route('settings.plugins') }}">
-                <i class="bi bi-plug me-2"></i>Plugins
-              </a>
-            </li>
-            <li>
-              <a class="nav-link ps-4 {{ request()->routeIs('settings.import') ? 'active' : '' }}"
-                 href="{{ route('settings.import') }}">
-                <i class="bi bi-cloud-arrow-down me-2"></i>Import from RSS
-              </a>
-            </li>
-
-            {{-- Administration (admins only) --}}
-            @if($isAdmin)
-              <li class="mt-3 px-4 text-uppercase small" style="color:#94a3b8;">Administration</li>
-              <li>
-                <a class="nav-link ps-4 {{ request()->routeIs('admin.users.*') ? 'active' : '' }}"
-                   href="{{ $usersUrl }}">
-                  <i class="bi bi-people-gear me-2"></i>User Management
-                </a>
-           
-                <a class="nav-link ps-4 {{ request()->routeIs('test.totals') ? 'active' : '' }}"
-                   href="{{  $database }}">
-                  <i class="bi bi-people-gear me-2"></i>DataBase
-                </a>
-              
-            @endif
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.general') ? 'active' : '' }}" href="{{ route('settings.general') }}"><i class="bi bi-sliders me-2"></i>General</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.feed') ? 'active' : '' }}" href="{{ route('settings.feed') }}"><i class="bi bi-rss me-2"></i>Feed</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.plugins') ? 'active' : '' }}" href="{{ route('settings.plugins') }}"><i class="bi bi-plug me-2"></i>Plugins</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.import') ? 'active' : '' }}" href="{{ route('settings.import') }}"><i class="bi bi-cloud-arrow-down me-2"></i>Import from RSS</a></li>
           </ul>
         </div>
       </div>
-    </nav>
 
-    <div class="upgrade">
-      {{-- space for upsell, etc. --}}
-    </div>
+      {{-- Administration dropdown (admins only) --}}
+      @php
+        $inAdmin   = request()->routeIs('admin.*') || request()->routeIs('test.totals');
+        $usersUrl  = \Route::has('admin.users.index') ? route('admin.users.index') : url('/admin/users');
+        $database  = \Route::has('test.totals') ? route('test.totals') : url('/test/totals');
+      @endphp
+      @if($isAdmin)
+        <div class="mt-2">
+          <div class="d-flex align-items-center justify-content-between mx-2">
+            <a class="nav-link flex-grow-1 {{ $inAdmin ? 'active' : '' }}"
+               href="{{ $usersUrl }}">
+              <i class="bi bi-shield-lock me-2"></i>Administration
+            </a>
+            <button class="btn btn-sm btn-outline-secondary ms-2"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#adminMenu"
+                    aria-controls="adminMenu"
+                    aria-expanded="{{ $inAdmin ? 'true' : 'false' }}">
+              <i class="bi bi-chevron-down"></i>
+            </button>
+          </div>
+
+          <div id="adminMenu" class="collapse {{ $inAdmin ? 'show' : '' }}">
+            <ul class="list-unstyled my-2">
+              <li><a class="nav-link ps-4 {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ $usersUrl }}"><i class="bi bi-person-lines-fill me-2"></i>User Management</a></li>
+              <li><a class="nav-link ps-4 {{ request()->routeIs('test.totals') ? 'active' : '' }}" href="{{ $database }}"><i class="bi bi-database-gear me-2"></i>Database</a></li>
+            </ul>
+          </div>
+        </div>
+      @endif
+    </nav>
   </aside>
 
   {{-- Mobile backdrop --}}
@@ -361,7 +323,6 @@
             <form method="POST" action="{{ route('logout') }}">
               @csrf
               <meta name="csrf-token" content="{{ csrf_token() }}">
-
               <button class="dropdown-item text-danger" type="submit">
                 <i class="bi bi-box-arrow-right me-2"></i>Logout
               </button>
@@ -380,7 +341,6 @@
 
 {{-- Shared "New Episode" modal --}}
 @include('episodes._modal_create')
-
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
