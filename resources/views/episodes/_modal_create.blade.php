@@ -1,17 +1,45 @@
-{{-- resources/views/episodes/_modal_create.blade.php --}}
 @push('styles')
 <style>
   #episodeModal .modal-dialog { max-width: 1100px; }
   #episodeModal .form-label { font-weight: 600; }
-  #episodeModal .muted-hint { color:#6b7280; font-size:.85rem; }
-  .drop-tile{
-    border:1px dashed rgba(0,0,0,.25);
-    border-radius:.75rem;
-    padding:1rem;
-    background:#fafafa;
+  #episodeModal .muted-hint { color: #6b7280; font-size: .85rem; }
+  .drop-tile {
+    border: 1px dashed rgba(0,0,0,.25);
+    border-radius: .75rem;
+    padding: 1rem;
+    background: #fafafa;
   }
-  .drop-tile:hover{ background:#f6f6f6; }
-  .drop-tile .title{ font-weight:600; }
+  .drop-tile:hover { background: #f6f6f6; }
+  .drop-tile .title { font-weight: 600; }
+
+  /* Match page's compact style */
+  #episodeModal .modal-content.section-card.compact {
+    padding: .5rem .5rem 0;
+    border-radius: .6rem;
+  }
+  #episodeModal .modal-header {
+    background-color: #f8f9fa; /* Matches table-light */
+    padding: .5rem .5rem;
+  }
+  #episodeModal .modal-body {
+    padding: .5rem;
+  }
+  #episodeModal .modal-footer {
+    background-color: #f8f9fa;
+    padding: .5rem;
+    border-top: 1px solid #e9ecef;
+  }
+  #episodeModal .btn-xs {
+    --bs-btn-padding-y: .30rem;
+    --bs-btn-padding-x: .62rem;
+    --bs-btn-font-size: .80rem;
+    line-height: 1.15;
+  }
+  #episodeModal .badge-compact {
+    font-size: .72rem;
+    font-weight: 600;
+    padding: .28rem .45rem;
+  }
 </style>
 @endpush
 
@@ -23,7 +51,7 @@
 
 <div class="modal fade" id="episodeModal" tabindex="-1" aria-labelledby="episodeModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
+    <div class="modal-content section-card compact">
       <form id="createEpisodeForm" method="POST" action="{{ route('episodes.store') }}" enctype="multipart/form-data">
         @csrf
         <input type="hidden" name="_show_episode_modal" value="1">
@@ -39,10 +67,10 @@
         </div>
 
         <div class="modal-body">
-          <div class="row g-4">
+          <div class="row g-2">
             {{-- Left: Title + Description --}}
             <div class="col-lg-7">
-              <div class="mb-3">
+              <div class="mb-2">
                 <label class="form-label" for="ep-title">Title</label>
                 <input id="ep-title" name="title" type="text" required
                        class="form-control @error('title') is-invalid @enderror"
@@ -50,7 +78,7 @@
                 @error('title') <div class="invalid-feedback">{{ $message }}</div> @enderror
               </div>
 
-              <div>
+              <div class="mb-2">
                 <label class="form-label" for="ep-desc">Description</label>
                 <textarea id="ep-desc" name="description" rows="10"
                           class="form-control @error('description') is-invalid @enderror"
@@ -61,7 +89,7 @@
 
             {{-- Right: Upload + meta --}}
             <div class="col-lg-5">
-              <div class="drop-tile mb-3">
+              <div class="drop-tile mb-2">
                 <div class="d-flex align-items-start">
                   <i class="bi bi-music-note-beamed fs-4 me-3"></i>
                   <div>
@@ -70,7 +98,7 @@
                   </div>
                 </div>
 
-                <div class="mt-3">
+                <div class="mt-2">
                   <input
                     id="ep-audio"
                     class="form-control @error('audio') is-invalid @enderror"
@@ -83,16 +111,16 @@
                 </div>
 
                 {{-- Inline progress (optional; shown during upload) --}}
-                <div id="createInlineProgress" class="mt-3 d-none">
+                <div id="createInlineProgress" class="mt-2 d-none">
                   <div class="small text-secondary mb-1" id="createProgressLabel">Uploading…</div>
-                  <div class="progress" style="height:8px;">
+                  <div class="progress" style="height:6px;">
                     <div id="createProgressBar" class="progress-bar" role="progressbar"
                          style="width:0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                   </div>
                 </div>
               </div>
 
-              <div class="row g-3">
+              <div class="row g-2">
                 <div class="col-6">
                   <label class="form-label" for="ep-dur-min">Duration (min)</label>
                   <input id="ep-dur-min" type="number" min="0" step="1"
@@ -113,7 +141,7 @@
                 </div>
               </div>
 
-              <div class="mt-3">
+              <div class="mt-2">
                 <label class="form-label" for="ep-pub">Publish At (optional)</label>
                 <input id="ep-pub" name="published_at" type="datetime-local"
                        class="form-control @error('published_at') is-invalid @enderror"
@@ -125,16 +153,16 @@
           </div>
         </div>
 
-        <div class="modal-footer d-flex justify-content-between align-items-center">
+        <div class="modal-footer bg-light p-2 d-flex justify-content-between align-items-center">
           <div class="muted-hint">
             <i class="bi bi-info-circle me-1"></i>
             You can edit details or change status after creation.
           </div>
           <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-outline-secondary btn-xs" data-bs-dismiss="modal">Cancel</button>
 
             {{-- Button spinner (Bootstrap) --}}
-            <button type="submit" class="btn btn-dark" id="createEpisodeBtn">
+            <button type="submit" class="btn btn-dark btn-xs" id="createEpisodeBtn">
               <span class="spinner-border spinner-border-sm me-2 d-none" id="createEpisodeSpin" role="status" aria-hidden="true"></span>
               <span id="createEpisodeLabel"><i class="bi bi-plus-lg me-1"></i>Create Episode</span>
             </button>

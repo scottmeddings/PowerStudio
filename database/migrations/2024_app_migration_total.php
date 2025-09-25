@@ -28,12 +28,7 @@ return new class extends Migration
             $table->text('profile_photo')->nullable();
         });
 
-        // ---- CACHE ----
-        Schema::create('cache', function (Blueprint $table) {
-            $table->string('key', 191)->primary();
-            $table->mediumText('value');
-            $table->integer('expiration');
-        });
+       
 
         // ---- JOBS ----
         Schema::create('jobs', function (Blueprint $table) {
@@ -404,7 +399,6 @@ return new class extends Migration
         Schema::dropIfExists('downloads');
         Schema::dropIfExists('episodes');
         Schema::dropIfExists('jobs');
-        Schema::dropIfExists('cache');
         Schema::dropIfExists('users');
 
         DB::statement('SET FOREIGN_KEY_CHECKS=1');

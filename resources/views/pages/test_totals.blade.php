@@ -15,9 +15,41 @@
 
 @section('content')
 @php
-    /** @var \Illuminate\Database\ConnectionInterface $conn */
     $conn   = DB::connection();
     $driver = $conn->getDriverName();
+
+    $tables      = collect();
+    $tableCounts = collect();
+    $errorNote   = null;
+
+    try {
+        if ($driver === 'sqlite') {
+            $tables = collect(DB::select("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
+                ->pluck('name')->sort()->values();
+        } elseif ($driver === 'mysql') {
+            $tables = collect(DB::select("
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = DATABASE()
+            "))->pluck('table_name')->sort()->values();
+        } elseif ($driver === 'pgsql') {
+            $tables = collect(DB::select("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
+                ->pluck('tablename')->sort()->values();
+        } else {
+            $errorNote = "Unsupported driver: {$driver}";
+        }
+
+        foreach ($tables as $t) {
+            if ($t === 'migrations') continue;
+            try {
+                $tableCounts[$t] = DB::table($t)->count();
+            } catch (\Throwable $e) {
+                $tableCounts[$t] = '—';
+            }
+        }
+    } catch (\Throwable $e) {
+        $errorNote = $e->getMessage();
+    }
 @endphp
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -43,32 +75,6 @@
     </div>
   </div>
 </div>
-
-@php
-    $tables      = collect();
-    $tableCounts = collect();
-    $errorNote   = null;
-
-    if ($driver === 'sqlite') {
-        try {
-            $tables = collect(DB::select(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            ))->pluck('name')->sort()->values();
-
-            foreach ($tables as $t) {
-                try {
-                    $tableCounts[$t] = DB::table($t)->count();
-                } catch (\Throwable $e) {
-                    $tableCounts[$t] = '—';
-                }
-            }
-        } catch (\Throwable $e) {
-            $errorNote = $e->getMessage();
-        }
-    } else {
-        $errorNote = 'This view is optimized for SQLite. (You can extend it for other drivers.)';
-    }
-@endphp
 
 {{-- All tables — row counts --}}
 <div class="card-like p-3 mb-3">
@@ -104,29 +110,34 @@
   </div>
 </div>
 
-{{-- Per-table data (SQLite) --}}
-@if($driver === 'sqlite' && $tables->isNotEmpty())
+{{-- Per-table data preview --}}
+@if($tables->isNotEmpty())
   @foreach($tables as $tname)
     @php
-        // Limit rows per table to keep the page responsive
         $limit = 200;
+        $rows = collect();
+        $columns = [];
 
-        // Fetch rows
         try {
             $rows = collect(DB::table($tname)->limit($limit)->get());
         } catch (\Throwable $e) {
             $rows = collect();
         }
 
-        // Column list: prefer row keys; if empty table, use PRAGMA table_info
-        $columns = [];
         if ($rows->isNotEmpty()) {
             $columns = array_keys((array) $rows->first());
         } else {
             try {
-                // PRAGMA: show columns even when the table is empty
-                $pragma = DB::select("PRAGMA table_info('$tname')");
-                $columns = collect($pragma)->pluck('name')->all();
+                if ($driver === 'sqlite') {
+                    $pragma = DB::select("PRAGMA table_info('$tname')");
+                    $columns = collect($pragma)->pluck('name')->all();
+                } elseif ($driver === 'mysql') {
+                    $desc = DB::select("DESCRIBE `$tname`");
+                    $columns = collect($desc)->pluck('Field')->all();
+                } elseif ($driver === 'pgsql') {
+                    $desc = DB::select("SELECT column_name FROM information_schema.columns WHERE table_name = ?", [$tname]);
+                    $columns = collect($desc)->pluck('column_name')->all();
+                }
             } catch (\Throwable $e) {
                 $columns = [];
             }
@@ -149,7 +160,7 @@
         </button>
       </div>
 
-      <div id="t_{{ md5($tname) }}" class="collapse show mt-3">
+      <div id="t_{{ md5($tname) }}" class="collapse mt-3">
         <div class="table-responsive" style="max-height: 420px; overflow:auto;">
           <table class="table table-sm table-striped table-fixed-header mb-0">
             <thead class="table-light">

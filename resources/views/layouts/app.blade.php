@@ -240,6 +240,7 @@
       @php
         $inSettings = request()->routeIs('settings.*') || request()->routeIs('admin.*');
         $usersUrl   = \Route::has('admin.users.index') ? route('admin.users.index') : url('/admin/users');
+        $database   = \Route::has('test.totals') ? route('test.totals') : url('/test/totals');
       @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
@@ -292,7 +293,12 @@
                    href="{{ $usersUrl }}">
                   <i class="bi bi-people-gear me-2"></i>User Management
                 </a>
-              </li>
+           
+                <a class="nav-link ps-4 {{ request()->routeIs('test.totals') ? 'active' : '' }}"
+                   href="{{  $database }}">
+                  <i class="bi bi-people-gear me-2"></i>DataBase
+                </a>
+              
             @endif
           </ul>
         </div>
@@ -374,6 +380,7 @@
 
 {{-- Shared "New Episode" modal --}}
 @include('episodes._modal_create')
+
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>

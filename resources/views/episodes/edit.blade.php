@@ -5,6 +5,7 @@
 @section('page-title', 'Edit Episode')
 
 @section('content')
+
 <style>
   .sticky-side { position: sticky; top: 82px; z-index: 5; }
   .cover-card  { border: 1px dashed rgba(0,0,0,.12); }
@@ -373,3 +374,5 @@
   });
 </script>
 @endsection
+@include('episodes._modal_chapters', ['episode' => $episode])
+@include('episodes._modal_transcript', ['episode' => $episode])

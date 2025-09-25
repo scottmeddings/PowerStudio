@@ -1,14 +1,26 @@
 <?php
+
 // app/Models/EpisodeTranscript.php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class EpisodeTranscript extends \App\Models\TenantModel
+class EpisodeTranscript extends Model
 {
-    protected $fillable = ['episode_id','format','body','duration_ms','storage_path'];
+    protected $table = 'episode_transcripts'; // ✅ ensure correct table name
 
-    public function episode() { return $this->belongsTo(Episode::class); }
+    protected $fillable = [
+        'episode_id',
+        'body',
+        'format',
+        'duration_ms',
+        'storage_path',
+    ];
 
-  
+    public function episode()
+    {
+        return $this->belongsTo(Episode::class, 'episode_id', 'id');
+    }
 }
+

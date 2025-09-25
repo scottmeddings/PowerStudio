@@ -52,6 +52,7 @@ use App\Http\Controllers\LinkedInAuthController;
 use App\Http\Controllers\FacebookPublishSetupController;
 use App\Http\Controllers\XAuthController;
 use App\Http\Controllers\Settings\ImportController;
+use App\Models\Episode;
 
 
 
@@ -356,58 +357,82 @@ Route::middleware('auth')->group(function () {
     | Episodes (CRUD + show)
     |--------------------------------------------------------------------------
     */
-    Route::get('/episodes',                 [PageController::class, 'episodes'])->name('episodes'); // list page (blade)
-    Route::get('/episodes/create',          [EpisodeController::class, 'create'])->name('episodes.create');
-    Route::post('/episodes',                [EpisodeController::class, 'store'])->name('episodes.store');
-    Route::get('/episodes/{episode}',       [EpisodeController::class, 'show'])->name('episodes.show');
+   // routes/web.php
 
-    Route::get('/episodes/{episode}/edit',  [EpisodeController::class, 'edit'])
-        ->middleware('can:update,episode')->name('episodes.edit');
+// Episodes (CRUD)
+Route::get('/episodes', [EpisodeController::class, 'index'])->name('episodes');
+Route::get('/episodes/create', [EpisodeController::class, 'create'])->name('episodes.create');
+Route::post('/episodes', [EpisodeController::class, 'store'])->name('episodes.store');
+Route::get('/episodes/{episode}', [EpisodeController::class, 'show'])->name('episodes.show');
 
-    Route::put   ('/episodes/{episode}',    [EpisodeController::class, 'update'])
-        ->middleware('can:update,episode')->name('episodes.update');
+Route::get('/episodes/{episode}/edit', [EpisodeController::class, 'edit'])
+    ->middleware('can:update,episode')->name('episodes.edit');
 
-    Route::delete('/episodes/{episode}',    [EpisodeController::class, 'destroy'])
-        ->middleware('can:delete,episode')->name('episodes.destroy');
+Route::put('/episodes/{episode}', [EpisodeController::class, 'update'])
+    ->middleware('can:update,episode')->name('episodes.update');
 
-    Route::get('/episodes/{episode}/download', [EpisodeController::class, 'download'])
+Route::delete('/episodes/{episode}', [EpisodeController::class, 'destroy'])
+    ->middleware('can:delete,episode')->name('episodes.destroy');
+
+
+// --------------------------------------
+// Audio uploads (NEW)
+// --------------------------------------
+Route::patch('/episodes/{episode}/audio/upload', [EpisodeController::class, 'uploadAudio'])
+    ->middleware('can:update,episode')->name('episodes.audio.upload');
+
+Route::patch('/episodes/{episode}/audio/url', [EpisodeController::class, 'setAudioUrl'])
+    ->middleware('can:update,episode')->name('episodes.audio.url');
+
+
+// --------------------------------------
+// Existing extra routes
+// --------------------------------------
+Route::get('/episodes/{episode}/download', [EpisodeController::class, 'download'])
     ->name('episodes.download');
-    // routes/web.php
-    Route::patch('/episodes/{episode}/plays', [\App\Http\Controllers\EpisodeController::class, 'setPlays'])
-        ->name('episodes.plays.set');
-    Route::put('/episodes/{episode}/plays', [\App\Http\Controllers\EpisodeController::class, 'setPlays'])
-    ->name('episodes.plays.set');
 
-    Route::get('/episodes', [EpisodeController::class, 'index'])->name('episodes');
-    
-    // Publish / Unpublish
-    Route::patch('/episodes/{episode}/publish',   [EpisodeController::class, 'publish'])->name('episodes.publish');
-    Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
+Route::patch('/episodes/{episode}/plays', [EpisodeController::class, 'setPlays'])->name('episodes.plays.set');
+Route::put('/episodes/{episode}/plays',   [EpisodeController::class, 'setPlays'])->name('episodes.plays.set');
 
-    // Cover upload/remove
-    Route::patch ('/episodes/{episode}/cover', [EpisodeController::class, 'uploadCover'])->name('episodes.cover.upload');
-    Route::delete('/episodes/{episode}/cover', [EpisodeController::class, 'removeCover'])->name('episodes.cover.remove');
+// Publish / Unpublish
+Route::patch('/episodes/{episode}/publish',   [EpisodeController::class, 'publish'])->name('episodes.publish');
+Route::patch('/episodes/{episode}/unpublish', [EpisodeController::class, 'unpublish'])->name('episodes.unpublish');
 
-    // AI actions (consistent naming with EpisodeAiController)
-    Route::post('/episodes/{episode}/ai/enhance',  [EpisodeAiController::class, 'enhance'])->name('episodes.ai.enhance');
-    Route::post('/episodes/{episode}/ai/cancel',   [EpisodeAiController::class, 'cancel'])->name('episodes.ai.cancel');
-    Route::get ('/episodes/{episode}/ai/progress', [EpisodeAiController::class, 'progress'])->name('episodes.ai.progress');
+// Cover upload/remove
+Route::patch ('/episodes/{episode}/cover', [EpisodeController::class, 'uploadCover'])->name('episodes.cover.upload');
+Route::delete('/episodes/{episode}/cover', [EpisodeController::class, 'removeCover'])->name('episodes.cover.remove');
 
-    // Episode sub-resources
-    Route::prefix('episodes/{episode}')->group(function () {
-        // Chapters
-        Route::get   ('/chapters',                [EpisodeChapterController::class, 'index'])->name('episodes.chapters.index');
-        Route::post  ('/chapters/sync',           [EpisodeChapterController::class, 'sync'])->name('episodes.chapters.sync');
-        Route::delete('/chapters/{chapter}',      [EpisodeChapterController::class, 'destroy'])->name('episodes.chapters.destroy');
+// AI actions
+Route::post('/episodes/{episode}/ai/enhance',  [EpisodeAiController::class, 'enhance'])->name('episodes.ai.enhance');
+Route::post('/episodes/{episode}/ai/cancel',   [EpisodeAiController::class, 'cancel'])->name('episodes.ai.cancel');
+Route::get ('/episodes/{episode}/ai/progress', [EpisodeAiController::class, 'progress'])->name('episodes.ai.progress');
 
-        // Transcript
-        Route::get   ('/transcript',              [EpisodeTranscriptController::class, 'show'])->name('episodes.transcript.show');
-        Route::post  ('/transcript',              [EpisodeTranscriptController::class, 'store'])->name('episodes.transcript.store');
-        Route::delete('/transcript',              [EpisodeTranscriptController::class, 'destroy'])->name('episodes.transcript.destroy');
-        Route::get   ('/transcript/download',     [EpisodeTranscriptController::class, 'download'])->name('episodes.transcript.download');
-    });
 
-      /*
+// Episode chapters routes
+Route::prefix('episodes/{episode}')->group(function () {
+    Route::get('/chapters', [EpisodeChapterController::class, 'index'])->name('episodes.chapters.index');
+    Route::post('/chapters/sync', [EpisodeChapterController::class, 'sync'])->name('episodes.chapters.sync');
+    Route::delete('/chapters/{chapter}', [EpisodeChapterController::class, 'destroy'])->name('episodes.chapters.destroy');
+});
+
+    // Transcript
+   Route::get('/episodes/{episode}/transcript', [EpisodeTranscriptController::class, 'show'])
+    ->name('episodes.transcript.show');
+
+Route::post('/episodes/{episode}/transcript', [EpisodeTranscriptController::class, 'store'])
+    ->name('episodes.transcript.store');
+
+Route::delete('/episodes/{episode}/transcript', [EpisodeTranscriptController::class, 'destroy'])
+    ->name('episodes.transcript.destroy');
+
+Route::get('/episodes/{episode}/transcript/download', [EpisodeTranscriptController::class, 'download'])
+    ->name('episodes.transcript.download');
+
+ 
+});      
+
+
+    /*
     |--------------------------------------------------------------------------
     | sTSATISTICS
     |--------------------------------------------------------------------------
@@ -525,6 +550,7 @@ Route::middleware('auth')->group(function () {
 
     // Test screen
     Route::get('/test/totals', [TestController::class, 'totals'])->name('test.totals');
+    Route::get('/debug/transcript/{episode}', [EpisodeTranscriptController::class, 'debug']);
 
     // Logout
     Route::post('/logout', function (Request $request) {
@@ -533,7 +559,6 @@ Route::middleware('auth')->group(function () {
         $request->session()->regenerateToken();
         return redirect()->route('home');
     })->name('logout');
-});
 
 
 

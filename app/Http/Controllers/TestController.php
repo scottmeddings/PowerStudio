@@ -13,31 +13,27 @@ class TestController extends Controller
 {
     public function totals()
     {
-        // Core counts (guard anything that might not exist)
+        // Core counts
         $totals = [
-            'users'             => class_exists(User::class)     ? User::count() : 0,
-            'episodes'          => class_exists(Episode::class)  ? Episode::count() : 0,
-            'downloads'         => class_exists(Download::class) ? Download::count() : 0,
-            'downloads_last7'   => class_exists(Download::class) ? Download::where('created_at', '>=', now()->subDays(7))->count() : 0,
-            'downloads_last30'  => class_exists(Download::class) ? Download::where('created_at', '>=', now()->subDays(30))->count() : 0,
+            'users'             => Schema::hasTable('users')     ? User::count() : 0,
+            'episodes'          => Schema::hasTable('episodes')  ? Episode::count() : 0,
+            'downloads'         => Schema::hasTable('downloads') ? Download::count() : 0,
+            'downloads_last7'   => Schema::hasTable('downloads') ? Download::where('created_at', '>=', now()->subDays(7))->count() : 0,
+            'downloads_last30'  => Schema::hasTable('downloads') ? Download::where('created_at', '>=', now()->subDays(30))->count() : 0,
         ];
 
-        // Episodes by status (draft/published/archived), if Episodes table exists
+        // Episodes by status (draft/published/archived)
         $episodesByStatus = collect();
-        if (Schema::hasTable('episodes') && class_exists(Episode::class) && Schema::hasColumn('episodes', 'status')) {
+        if (Schema::hasTable('episodes') && Schema::hasColumn('episodes', 'status')) {
             $episodesByStatus = Episode::select('status', DB::raw('COUNT(*) as c'))
                 ->groupBy('status')
                 ->orderBy('status')
                 ->get();
         }
 
-        // Top episodes by downloads (requires downloads.episode_id)
+        // Top episodes by downloads
         $topEpisodes = collect();
-        if (
-            Schema::hasTable('downloads') &&
-            Schema::hasTable('episodes')  &&
-            Schema::hasColumn('downloads', 'episode_id')
-        ) {
+        if (Schema::hasTable('downloads') && Schema::hasTable('episodes')) {
             $topEpisodes = DB::table('downloads')
                 ->join('episodes', 'downloads.episode_id', '=', 'episodes.id')
                 ->select('episodes.id', 'episodes.title', DB::raw('COUNT(downloads.id) as downloads_count'))
@@ -47,7 +43,7 @@ class TestController extends Controller
                 ->get();
         }
 
-        // DB-wide table counts (best-effort, driver-aware)
+        // Table row counts (MySQL-focused)
         [$tableCounts, $tableCountsError] = $this->getAllTableCounts();
 
         return view('pages.test_totals', compact(
@@ -60,42 +56,34 @@ class TestController extends Controller
     }
 
     /**
-     * Best-effort table row counts across drivers without requiring doctrine/dbal.
-     * Returns [array $counts, string|null $error]
+     * Row counts for all tables.
      */
     private function getAllTableCounts(): array
     {
-        $connection = DB::connection();
-        $driver = $connection->getDriverName();
-        $tables = [];
-
         try {
-            if ($driver === 'sqlite') {
+            $driver = DB::getDriverName();
+            $tables = [];
+
+            if ($driver === 'mysql') {
+                // Get all tables for current schema
+                $tables = collect(DB::select("
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = DATABASE()
+                "))->pluck('table_name')->all();
+            } elseif ($driver === 'sqlite') {
                 $tables = collect(DB::select("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
-                    ->pluck('name')
-                    ->all();
-            } elseif ($driver === 'mysql') {
-                $tables = collect(DB::select("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()"))
-                    ->pluck('table_name')
-                    ->all();
+                    ->pluck('name')->all();
             } elseif ($driver === 'pgsql') {
                 $tables = collect(DB::select("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
-                    ->pluck('tablename')
-                    ->all();
-            } else {
-                // Unknown driver – skip
-                return [[], "Unsupported driver: {$driver}"];
+                    ->pluck('tablename')->all();
             }
 
-            // Count rows per table (skip migrations table to reduce noise)
             $counts = [];
             foreach ($tables as $t) {
                 if ($t === 'migrations') continue;
-                // Only count if accessible & valid
                 try {
-                    if (Schema::hasTable($t)) {
-                        $counts[$t] = DB::table($t)->count();
-                    }
+                    $counts[$t] = DB::table($t)->count();
                 } catch (\Throwable $e) {
                     $counts[$t] = 'ERR';
                 }

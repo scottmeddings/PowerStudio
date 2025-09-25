@@ -5,93 +5,58 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Builder;
 use App\Models\EpisodeChapter;
 use App\Models\EpisodeTranscript;
 use App\Models\Concerns\BelongsToOwner;
-use Illuminate\Database\Eloquent\Builder; // <-- import THIS Builder
 
-
-
-class Episode extends \App\Models\TenantModel
+class Episode extends TenantModel
 {
-   
-
     use HasFactory, BelongsToOwner;
 
-    // Let the trait set user_id on create; include it ONLY if you also import/migrate from external data.
-    
+    protected $table = 'episodes';
 
- 
-  
-   protected $fillable = ['title','...','user_id']; // keep user_id fillable if you import/migrate
-
-   public function scopePublishedWithAudio(Builder $q): Builder
-    {
-        return $q->whereNotNull('published_at')
-                 ->where('published_at', '<=', now())
-                 ->whereNotNull('playable_url'); // adjust to your schema
-                 // or ->whereHas('media', fn (Builder $m) => $m->where('kind','audio')->whereNotNull('url'));
-    }
-  
-    public function newEloquentBuilder($query): EpisodeBuilder
-    {
-        return new EpisodeBuilder($query);
-    }
-
-   
-    // app/Models/Episode.php
-
+    protected $fillable = [
+        'user_id',
+        'title',
+        'description',
+        'slug',
+        'audio_url',
+        'audio_path',
+        'audio_bytes',
+        'duration_seconds',
+        'status',
+        'published_at',
+        'cover_path',
+        'image_url',
+        'image_path',
+        'episode_number',
+        'season',
+        'episode_type',
+        'explicit',
+        'uuid',
+        'unique_key',
+    ];
 
     protected $casts = [
         'published_at'     => 'datetime',
         'duration_seconds' => 'integer',
-        'user_id' => 'int',
-        // Do NOT cast 'chapters' to array when using the hasMany relation.
+        'user_id'          => 'integer',
     ];
 
-    /* Relationships */
+    /* ---------------- Relationships ---------------- */
+
     public function user()
     {
         return $this->belongsTo(User::class);
     }
-     public function downloads()
+
+    public function downloads()
     {
-        return $this->hasMany(\App\Models\Download::class);
+        return $this->hasMany(Download::class);
     }
 
-    // Optional convenience so you can use $episode->plays anywhere
-    public function getPlaysAttribute()
-    {
-        // prefer eager count if present; otherwise query
-        return $this->downloads_count ?? $this->downloads()->count();
-    }
-
-    // Always returns a usable URL (CDN if set, else storage/public URL, else raw path if already absolute)
-    public function getPlayableUrlAttribute(): ?string
-    {
-        if ($this->audio_url) return $this->audio_url;
-        if (!$this->audio_path) return null;
-        if (Str::startsWith($this->audio_path, ['http://','https://','//'])) return $this->audio_path;
-        return Storage::disk('public')->url($this->audio_path); // adjust disk if needed
-    }
-
-    public function getCoverUrlAttribute(): string
-    {
-        if (!empty($this->cover_path)) {
-            // change disk if your covers live on a different disk
-            return Storage::disk('public')->url($this->cover_path);
-        }
-        if (!empty($this->image_path)) {
-            return Storage::disk('public')->url($this->image_path);
-        }
-        if (!empty($this->image_url)) {
-            return Str::startsWith($this->image_url, ['http://','https://','//','data:'])
-                ? $this->image_url
-                : asset(ltrim($this->image_url, '/'));
-        }
-        return asset('images/podcast-cover.jpg');
-    }
-    
     public function comments()
     {
         return $this->hasMany(Comment::class)->latest();
@@ -102,15 +67,68 @@ class Episode extends \App\Models\TenantModel
         return $this->hasMany(EpisodeChapter::class)->orderBy('sort');
     }
 
-public function transcript()
-{
-    return $this->hasOne(\App\Models\EpisodeTranscript::class);
-}
-   
+    public function transcript()
+    {
+        return $this->hasOne(EpisodeTranscript::class, 'episode_id', 'id');
+    }
 
-    // always load transcript with the model
 
-    /* Accessors */
+    /* ---------------- Scopes ---------------- */
+
+    public function scopePublishedWithAudio(Builder $q): Builder
+    {
+        return $q->whereNotNull('published_at')
+                 ->where('published_at', '<=', now())
+                 ->whereNotNull('playable_url');
+    }
+
+    public function newEloquentBuilder($query): EpisodeBuilder
+    {
+        return new EpisodeBuilder($query);
+    }
+
+    /* ---------------- Accessors ---------------- */
+
+    public function getPlaysAttribute()
+    {
+        return $this->downloads_count ?? $this->downloads()->count();
+    }
+
+    public function getPlayableUrlAttribute(): ?string
+    {
+        if ($this->audio_url) {
+            return $this->audio_url;
+        }
+        if (!$this->audio_path) {
+            return null;
+        }
+
+        if (Str::startsWith($this->audio_path, ['http://','https://','//'])) {
+            return $this->audio_path;
+        }
+
+        return Storage::disk('public')->url($this->audio_path);
+    }
+
+    public function getCoverUrlAttribute(): string
+    {
+        if (!empty($this->cover_path)) {
+            return Storage::disk('public')->url($this->cover_path);
+        }
+
+        if (!empty($this->image_path)) {
+            return Storage::disk('public')->url($this->image_path);
+        }
+
+        if (!empty($this->image_url)) {
+            return Str::startsWith($this->image_url, ['http://','https://','//','data:'])
+                ? $this->image_url
+                : asset(ltrim($this->image_url, '/'));
+        }
+
+        return asset('images/podcast-cover.jpg');
+    }
+
     public function getCoverImageUrlAttribute(): ?string
     {
         if (!empty($this->cover_url)) {

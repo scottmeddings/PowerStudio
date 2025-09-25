@@ -8,11 +8,21 @@ use Illuminate\Http\Request;
 
 class EpisodeChapterController extends Controller
 {
-    public function index(Episode $episode)
+   public function index(Request $request, Episode $episode)
     {
         $this->authorizeOwnership($episode);
-        return response()->json($episode->chapters()->get(['id','title','starts_at_ms','sort']));
+
+        $chapters = $episode->chapters()
+            ->orderBy('sort')
+            ->orderBy('starts_at_ms')
+            ->get(['id','episode_id','sort','title','starts_at_ms','created_at','updated_at']);
+
+        return response()->json([
+            'ok'       => true,
+            'chapters' => $chapters,
+        ]);
     }
+
 
     // Replace all chapters in one request
     public function sync(Request $request, Episode $episode)
