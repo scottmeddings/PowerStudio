@@ -9,136 +9,74 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 
   <style>
-    /* ===============================
-       THEME VARIABLES (Light default)
-       =============================== */
     :root{
       --brand-1:#6366f1; --brand-2:#06b6d4; --sidebar-w:260px;
 
-      /* light palette */
-      --c-bg: #f5f7fb;
-      --c-text: #0b1220;
-      --c-muted: #6b7280;
-
-      --c-topbar-bg: #ffffff;
-      --c-topbar-border: rgba(0,0,0,.06);
-
-      --c-sidebar-bg: #0f172a;
-      --c-sidebar-text: #cbd5e1;
-      --c-sidebar-link: #cbd5e1;
+      --c-bg: #f5f7fb; --c-text: #0b1220; --c-muted: #6b7280;
+      --c-topbar-bg: #ffffff; --c-topbar-border: rgba(0,0,0,.06);
+      --c-sidebar-bg: #0f172a; --c-sidebar-text: #cbd5e1; --c-sidebar-link: #cbd5e1;
       --c-sidebar-link-hover-bg: rgba(255,255,255,.08);
       --c-sidebar-link-active-bg: rgba(255,255,255,.08);
       --c-sidebar-collapse-active-bg: rgba(255,255,255,.06);
-
-      --c-card-bg: #ffffff;
-      --c-card-border: rgba(0,0,0,.06);
-
-      --c-outline: #6c757d;
-      --c-outline-hover-bg: #f1f3f5;
-
-      --c-danger: #dc3545;
-      --c-danger-contrast: #ffffff;
+      --c-card-bg: #ffffff; --c-card-border: rgba(0,0,0,.06);
+      --c-outline: #6c757d; --c-outline-hover-bg: #f1f3f5;
+      --c-danger: #dc3545; --c-danger-contrast: #ffffff;
     }
-
-    /* Dark overrides */
     html[data-theme="dark"]{
-      --c-bg: #0b1220;
-      --c-text: #e5e7eb;
-      --c-muted: #9aa3b2;
-
-      --c-topbar-bg: #0f172a;
-      --c-topbar-border: rgba(255,255,255,.08);
-
-      --c-sidebar-bg: #0a101f;
-      --c-sidebar-text: #b6c2d2;
-      --c-sidebar-link: #b6c2d2;
+      --c-bg: #0b1220; --c-text: #e5e7eb; --c-muted: #9aa3b2;
+      --c-topbar-bg: #0f172a; --c-topbar-border: rgba(255,255,255,.08);
+      --c-sidebar-bg: #0a101f; --c-sidebar-text: #b6c2d2; --c-sidebar-link: #b6c2d2;
       --c-sidebar-link-hover-bg: rgba(255,255,255,.06);
       --c-sidebar-link-active-bg: rgba(255,255,255,.10);
       --c-sidebar-collapse-active-bg: rgba(255,255,255,.08);
-
-      --c-card-bg: #101829;
-      --c-card-border: rgba(255,255,255,.08);
-
-      --c-outline: #8b95a5;
-      --c-outline-hover-bg: #1a2335;
-
-      --c-danger:#ef4444;
-      --c-danger-contrast:#ffffff;
+      --c-card-bg: #101829; --c-card-border: rgba(255,255,255,.08);
+      --c-outline: #8b95a5; --c-outline-hover-bg: #1a2335;
+      --c-danger:#ef4444; --c-danger-contrast:#ffffff;
     }
 
-    /* ====== Base layout ====== */
     body{ background-color:var(--c-bg); color:var(--c-text); }
-    .modal{ z-index:3000 } .modal-backdrop{ z-index:2990 }
-
     .app{
       min-height:100vh; display:grid;
       grid-template-columns:var(--sidebar-w) 1fr;
       grid-template-rows:auto 1fr;
       grid-template-areas:"sidebar topbar" "sidebar main";
     }
-    .sidebar{
-      grid-area:sidebar; background:var(--c-sidebar-bg); color:var(--c-sidebar-text);
-      position:sticky; top:0; height:100vh; padding:1rem 0; z-index:1030;
-    }
-    .topbar{
-      grid-area:topbar; background:var(--c-topbar-bg); border-bottom:1px solid var(--c-topbar-border);
-      position:sticky; top:0; z-index:1010;
-    }
+    .sidebar{ grid-area:sidebar; background:var(--c-sidebar-bg); color:var(--c-sidebar-text);
+      position:sticky; top:0; height:100vh; padding:1rem 0; z-index:1030; }
+    .topbar{ grid-area:topbar; background:var(--c-topbar-bg);
+      border-bottom:1px solid var(--c-topbar-border); position:sticky; top:0; z-index:1010; }
     .main{ grid-area:main; position:relative; z-index:1; }
 
-    /* Sidebar UI */
-    .sidebar .brand-logo{
-      text-align:center; margin-bottom:1.5rem;
-    }
-    .sidebar .brand-logo img{
-      max-width:140px; height:auto;
-    }
+    .sidebar .brand-logo{ text-align:center; margin-bottom:1.5rem; }
+    .sidebar .brand-logo img{ max-width:140px; height:auto; }
+
     .sidebar .nav-link{
-      color:var(--c-sidebar-link); border-radius:.5rem; padding:.6rem 1rem; margin:.2rem .75rem;
+      color:var(--c-sidebar-link); border-radius:.5rem;
+      padding:.6rem 1rem; margin:.2rem .75rem;
+      display:flex; align-items:center; justify-content:flex-start;
+    }
+    .sidebar .nav-link i.bi {
+      display:inline-block; width:1.5rem; text-align:center;
+      font-size:1rem; flex-shrink:0;
     }
     .sidebar .nav-link.active,
     .sidebar .nav-link:hover{ color:#fff; background:var(--c-sidebar-link-hover-bg); }
     .sidebar .collapse .nav-link.active{ background:var(--c-sidebar-collapse-active-bg); color:#fff; }
-    .sidebar .nav-link.ps-4{ font-size:.95rem; opacity:.95; }
 
-    .section-card{
-      background:var(--c-card-bg); border:1px solid var(--c-card-border);
-      border-radius:.75rem; box-shadow:0 10px 30px rgba(0,0,0,.03);
+    .sidebar .dropdown-toggle-icon {
+      display:inline-block; width:1.5rem; text-align:center;
     }
 
-    .btn-blush{ color:#fff; background:linear-gradient(135deg,#fb7185,#f472b6); border-color:#ec4899; box-shadow:0 .35rem 1rem rgba(236,72,153,.25)}
-    .btn-blush:hover{ color:#fff; background:linear-gradient(135deg,#db2777,#ec4899); border-color:#db2777 }
-    .btn-outline-blush{ color:#ec4899; border-color:#ec4899 }
-    .btn-outline-blush:hover{ color:#fff; background:#ec4899; border-color:#ec4899 }
-    i.bi, .bi, svg.bi{ font-size:1rem; line-height:1 }
-
-    /* Outline neutral buttons adapt to theme */
-    .btn-outline-secondary{
-      color:var(--c-outline); border-color:var(--c-outline);
-    }
-    .btn-outline-secondary:hover{
-      color:var(--c-text); background:var(--c-outline-hover-bg); border-color:var(--c-outline);
-    }
-
-    .dropdown-menu{
-      background:var(--c-card-bg); border-color:var(--c-card-border);
-      color:var(--c-text);
-    }
-    .dropdown-item{ color:var(--c-text); }
-    .dropdown-item:hover{ background:var(--c-sidebar-link-hover-bg); color:#fff; }
-
-    .text-danger{ color:var(--c-danger) !important; }
-
-    /* Mobile sidebar */
     @media (max-width:992px){
       .app{ grid-template-columns:1fr; grid-template-areas:"topbar" "main" }
-      .sidebar{ position:fixed; inset:0 auto 0 0; width:var(--sidebar-w); transform:translateX(-100%); transition:transform .25s; z-index:1050 }
+      .sidebar{ position:fixed; inset:0 auto 0 0; width:var(--sidebar-w);
+        transform:translateX(-100%); transition:transform .25s; z-index:1050 }
       .sidebar.show{ transform:translateX(0) }
-      .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1049 }
+      .sidebar-backdrop{ display:none; position:fixed; inset:0;
+        background:rgba(0,0,0,.35); z-index:1049 }
       .sidebar-backdrop.show{ display:block }
     }
   </style>
-
   @stack('styles')
 </head>
 <body>
@@ -155,85 +93,70 @@
         $isAdmin = $role === 'admin';
       @endphp
 
-      <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
-         href="{{ route('dashboard') }}">
-        <i class="bi bi-speedometer2 me-2"></i>Dashboard
+      <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}">
+        <i class="bi bi-speedometer2"></i>Dashboard
       </a>
 
-      <a class="nav-link {{ request()->routeIs('episodes*') ? 'active' : '' }}"
-         href="{{ route('episodes') }}">
-        <i class="bi bi-mic me-2"></i>Episodes
+      <a class="nav-link {{ request()->routeIs('episodes*') ? 'active' : '' }}" href="{{ route('episodes') }}">
+        <i class="bi bi-mic"></i>Episodes
       </a>
 
       {{-- Distribution dropdown --}}
       @php
         $inDistribution = request()->routeIs('distribution*');
-        $appsUrl    = \Route::has('distribution.apps')    ? route('distribution.apps')    : '#';
-        $socialUrl  = \Route::has('distribution.social')  ? route('distribution.social')  : '#';
+        $appsUrl    = \Route::has('distribution.apps') ? route('distribution.apps') : '#';
+        $socialUrl  = \Route::has('distribution.social') ? route('distribution.social') : '#';
         $websiteUrl = \Route::has('distribution.website') ? route('distribution.website') : '#';
-        $playerUrl  = \Route::has('distribution.player')  ? route('distribution.player')  : '#';
+        $playerUrl  = \Route::has('distribution.player') ? route('distribution.player') : '#';
       @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
           <a class="nav-link flex-grow-1 {{ $inDistribution ? 'active' : '' }}" href="#">
-            <i class="bi bi-broadcast-pin me-2"></i>Distribution
+            <i class="bi bi-broadcast-pin"></i>Distribution
           </a>
-          <button class="btn btn-sm btn-outline-secondary ms-2"
-                  type="button"
-                  data-bs-toggle="collapse"
-                  data-bs-target="#distributionMenu"
-                  aria-controls="distributionMenu"
-                  aria-expanded="{{ $inDistribution ? 'true' : 'false' }}">
-            <i class="bi bi-chevron-down"></i>
+          <button class="btn btn-sm btn-outline-secondary ms-2" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#distributionMenu"
+                  aria-controls="distributionMenu" aria-expanded="{{ $inDistribution ? 'true' : 'false' }}">
+            <span class="dropdown-toggle-icon"><i class="bi bi-chevron-down"></i></span>
           </button>
         </div>
-
         <div id="distributionMenu" class="collapse {{ $inDistribution ? 'show' : '' }}">
           <ul class="list-unstyled my-2">
-            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}" href="{{ $appsUrl }}"><i class="bi bi-app-indicator me-2"></i>Podcast Apps</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}" href="{{ $socialUrl }}"><i class="bi bi-share me-2"></i>Social Share</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}" href="{{ $websiteUrl }}"><i class="bi bi-globe2 me-2"></i>Podcast Website</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}" href="{{ $playerUrl }}"><i class="bi bi-play-btn me-2"></i>Embeddable Player</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.apps') ? 'active' : '' }}" href="{{ $appsUrl }}"><i class="bi bi-app-indicator"></i>Podcast Apps</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.social') ? 'active' : '' }}" href="{{ $socialUrl }}"><i class="bi bi-share"></i>Social Share</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.website') ? 'active' : '' }}" href="{{ $websiteUrl }}"><i class="bi bi-globe2"></i>Podcast Website</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('distribution.player') ? 'active' : '' }}" href="{{ $playerUrl }}"><i class="bi bi-play-btn"></i>Embeddable Player</a></li>
           </ul>
         </div>
       </div>
 
-      <a class="nav-link {{ request()->routeIs('statistics*') ? 'active' : '' }}"
-         href="{{ route('statistics') }}">
-        <i class="bi bi-graph-up-arrow me-2"></i>Statistics
+      <a class="nav-link {{ request()->routeIs('statistics*') ? 'active' : '' }}" href="{{ route('statistics') }}">
+        <i class="bi bi-graph-up-arrow"></i>Statistics
       </a>
 
-      <a class="nav-link {{ request()->routeIs('monetization*') ? 'active' : '' }}"
-         href="{{ route('monetization') }}">
-        <i class="bi bi-currency-dollar me-2"></i>Monetization
+      <a class="nav-link {{ request()->routeIs('monetization*') ? 'active' : '' }}" href="{{ route('monetization') }}">
+        <i class="bi bi-currency-dollar"></i>Monetization
       </a>
 
       {{-- Settings dropdown --}}
-      @php
-        $inSettings = request()->routeIs('settings.*');
-      @endphp
+      @php $inSettings = request()->routeIs('settings.*'); @endphp
       <div class="mt-2">
         <div class="d-flex align-items-center justify-content-between mx-2">
-          <a class="nav-link flex-grow-1 {{ $inSettings ? 'active' : '' }}"
-             href="{{ route('settings.index') }}">
-            <i class="bi bi-gear me-2"></i>Settings
+          <a class="nav-link flex-grow-1 {{ $inSettings ? 'active' : '' }}" href="{{ route('settings.index') }}">
+            <i class="bi bi-gear"></i>Settings
           </a>
-          <button class="btn btn-sm btn-outline-secondary ms-2"
-                  type="button"
-                  data-bs-toggle="collapse"
-                  data-bs-target="#settingsMenu"
-                  aria-controls="settingsMenu"
-                  aria-expanded="{{ $inSettings ? 'true' : 'false' }}">
-            <i class="bi bi-chevron-down"></i>
+          <button class="btn btn-sm btn-outline-secondary ms-2" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#settingsMenu"
+                  aria-controls="settingsMenu" aria-expanded="{{ $inSettings ? 'true' : 'false' }}">
+            <span class="dropdown-toggle-icon"><i class="bi bi-chevron-down"></i></span>
           </button>
         </div>
-
         <div id="settingsMenu" class="collapse {{ $inSettings ? 'show' : 'hide' }}">
           <ul class="list-unstyled my-2">
-            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.general') ? 'active' : '' }}" href="{{ route('settings.general') }}"><i class="bi bi-sliders me-2"></i>General</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.feed') ? 'active' : '' }}" href="{{ route('settings.feed') }}"><i class="bi bi-rss me-2"></i>Feed</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.plugins') ? 'active' : '' }}" href="{{ route('settings.plugins') }}"><i class="bi bi-plug me-2"></i>Plugins</a></li>
-            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.import') ? 'active' : '' }}" href="{{ route('settings.import') }}"><i class="bi bi-cloud-arrow-down me-2"></i>Import from RSS</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.general') ? 'active' : '' }}" href="{{ route('settings.general') }}"><i class="bi bi-sliders"></i>General</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.feed') ? 'active' : '' }}" href="{{ route('settings.feed') }}"><i class="bi bi-rss"></i>Feed</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.plugins') ? 'active' : '' }}" href="{{ route('settings.plugins') }}"><i class="bi bi-plug"></i>Plugins</a></li>
+            <li><a class="nav-link ps-4 {{ request()->routeIs('settings.import') ? 'active' : '' }}" href="{{ route('settings.import') }}"><i class="bi bi-cloud-arrow-down"></i>Import from RSS</a></li>
           </ul>
         </div>
       </div>
@@ -247,24 +170,19 @@
       @if($isAdmin)
         <div class="mt-2">
           <div class="d-flex align-items-center justify-content-between mx-2">
-            <a class="nav-link flex-grow-1 {{ $inAdmin ? 'active' : '' }}"
-               href="{{ $usersUrl }}">
-              <i class="bi bi-shield-lock me-2"></i>Administration
+            <a class="nav-link flex-grow-1 {{ $inAdmin ? 'active' : '' }}" href="{{ $usersUrl }}">
+              <i class="bi bi-shield-lock"></i>Administration
             </a>
-            <button class="btn btn-sm btn-outline-secondary ms-2"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#adminMenu"
-                    aria-controls="adminMenu"
-                    aria-expanded="{{ $inAdmin ? 'true' : 'false' }}">
-              <i class="bi bi-chevron-down"></i>
+            <button class="btn btn-sm btn-outline-secondary ms-2" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#adminMenu"
+                    aria-controls="adminMenu" aria-expanded="{{ $inAdmin ? 'true' : 'false' }}">
+              <span class="dropdown-toggle-icon"><i class="bi bi-chevron-down"></i></span>
             </button>
           </div>
-
           <div id="adminMenu" class="collapse {{ $inAdmin ? 'show' : '' }}">
             <ul class="list-unstyled my-2">
-              <li><a class="nav-link ps-4 {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ $usersUrl }}"><i class="bi bi-person-lines-fill me-2"></i>User Management</a></li>
-              <li><a class="nav-link ps-4 {{ request()->routeIs('test.totals') ? 'active' : '' }}" href="{{ $database }}"><i class="bi bi-database-gear me-2"></i>Database</a></li>
+              <li><a class="nav-link ps-4 {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ $usersUrl }}"><i class="bi bi-person-lines-fill"></i>User Management</a></li>
+              <li><a class="nav-link ps-4 {{ request()->routeIs('test.totals') ? 'active' : '' }}" href="{{ $database }}"><i class="bi bi-database-gear"></i>Database</a></li>
             </ul>
           </div>
         </div>
@@ -287,8 +205,7 @@
 
     <div class="d-flex align-items-center gap-2">
       {{-- THEME TOGGLE --}}
-      <button id="themeToggle" type="button" class="btn btn-outline-secondary" aria-pressed="false"
-              title="Toggle dark mode">
+      <button id="themeToggle" type="button" class="btn btn-outline-secondary" aria-pressed="false" title="Toggle dark mode">
         <i class="bi bi-moon-stars" id="iconMoon"></i>
         <i class="bi bi-sun d-none" id="iconSun"></i>
       </button>
@@ -301,13 +218,9 @@
         <i class="bi bi-life-preserver me-1"></i>Support
       </button>
 
-      @php
-        $user = auth()->user();
-        $avatar = $user?->avatar_url ?? null;
-      @endphp
+      @php $user = auth()->user(); $avatar = $user?->avatar_url ?? null; @endphp
       <div class="dropdown">
-        <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2 dropdown-toggle"
-                data-bs-toggle="dropdown" type="button">
+        <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2 dropdown-toggle" data-bs-toggle="dropdown" type="button">
           @if($avatar)
             <img src="{{ $avatar }}" alt="Profile" class="rounded-circle object-fit-cover" style="width:22px;height:22px;">
           @else
@@ -339,13 +252,11 @@
   </main>
 </div>
 
-{{-- Shared "New Episode" modal --}}
 @include('episodes._modal_create')
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (function () {
-  /* Sidebar open/close (mobile) */
   const sidebar  = document.getElementById('sidebar');
   const backdrop = document.getElementById('sidebarBackdrop');
   const openBtn  = document.getElementById('openSidebar');
@@ -357,14 +268,11 @@
     sidebar.classList.remove('show'); backdrop.classList.remove('show');
   });
 
-  // Avoid anchors with "#" from polluting the URL
   document.querySelectorAll('a[href="#"]').forEach(a => a.addEventListener('click', e => e.preventDefault()));
 
-  // Auto re-open "New Episode" modal after validation errors
   const shouldOpen = @json(old('_show_episode_modal') ? true : false);
   if (shouldOpen) new bootstrap.Modal(document.getElementById('episodeModal')).show();
 
-  /* ====== THEME TOGGLER ====== */
   const html = document.documentElement;
   const toggleBtn = document.getElementById('themeToggle');
   const iconMoon  = document.getElementById('iconMoon');
@@ -378,7 +286,6 @@
     else     { iconMoon.classList.remove('d-none'); iconSun.classList.add('d-none'); }
   }
 
-  // initial preference: saved -> system -> light
   const saved = localStorage.getItem('theme');
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(saved ?? (prefersDark ? 'dark' : 'light'));
@@ -389,7 +296,6 @@
     localStorage.setItem('theme', next);
   });
 
-  // live update if OS setting changes and user hasn't overridden manually
   try{
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener?.('change', e => {
